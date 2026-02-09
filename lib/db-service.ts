@@ -80,7 +80,7 @@ export async function getPipelineStages(jobOfferId: string) {
   return data as PipelineStage[];
 }
 
-export async function updatePipelineStages(jobOfferId: string, stages: Omit<PipelineStage, 'id' | 'created_at'>[]) {
+export async function updatePipelineStages(jobOfferId: string, stages: Array<{ name: string; stage_order: number }>) {
   console.log('[DB] Updating pipeline stages for job:', jobOfferId);
   console.log('[DB] New stages:', JSON.stringify(stages, null, 2));
 
@@ -143,9 +143,14 @@ export async function createCandidate(candidate: Omit<Candidate, 'id' | 'created
   console.log('[DB] Candidate data:', JSON.stringify(candidate, null, 2));
 
   // Normalize source to match check constraint
-  const normalizedSource = candidate.source ?
-    (candidate.source.toLowerCase() === 'cvthèque' ? 'cvtheque' : candidate.source.toLowerCase())
-    : 'upload';
+  let normalizedSource = 'upload';
+  if (candidate.source) {
+    const s = candidate.source.toLowerCase();
+    if (s === 'linkedin') normalizedSource = 'linkedin';
+    else if (s === 'cvtheque' || s === 'cvthèque') normalizedSource = 'cvtheque';
+    else if (s === 'upload') normalizedSource = 'upload';
+    // Any other value (like 'local') defaults to 'upload'
+  }
 
   console.log('[DB] Candidate source (original):', candidate.source);
   console.log('[DB] Candidate source (normalized):', normalizedSource);
@@ -163,6 +168,25 @@ export async function createCandidate(candidate: Omit<Candidate, 'id' | 'created
 
   console.log('[DB] ✓ Candidate created successfully');
   console.log('[DB] Created candidate:', JSON.stringify(data?.[0], null, 2));
+  return data?.[0] as Candidate;
+}
+
+export async function updateCandidate(candidateId: string, updates: Partial<Candidate>) {
+  console.log('[DB] Updating candidate:', candidateId);
+  console.log('[DB] Updates:', JSON.stringify(updates, null, 2));
+
+  const { data, error } = await supabase
+    .from('candidates')
+    .update(updates)
+    .eq('id', candidateId)
+    .select();
+
+  if (error) {
+    console.error('[DB] ❌ Error updating candidate:', error);
+    throw error;
+  }
+
+  console.log('[DB] ✓ Candidate updated successfully');
   return data?.[0] as Candidate;
 }
 

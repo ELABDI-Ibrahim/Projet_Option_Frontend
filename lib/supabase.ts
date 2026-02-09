@@ -19,7 +19,7 @@ export interface Company {
 
 export interface JobOffer {
   id: string;
-  company_id: string;
+  company_id?: string;
   title: string;
   description?: string;
   department?: string;

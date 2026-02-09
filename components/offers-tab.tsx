@@ -24,6 +24,7 @@ interface OffersTabProps {
   onUpdateRounds?: (jobId: string, rounds: Round[]) => void;
   onToggleOfferStatus?: (jobId: string) => void;
   onEnrichWithLinkedIn?: (candidateId: string, linkedinData: any) => void;
+  onUpdateCandidateLinkedIn?: (candidateId: string, linkedInUrl: string) => void;
 }
 
 export function OffersTab({
@@ -34,7 +35,8 @@ export function OffersTab({
   onEnrichCandidate,
   onUpdateRounds,
   onToggleOfferStatus,
-  onEnrichWithLinkedIn
+  onEnrichWithLinkedIn,
+  onUpdateCandidateLinkedIn
 }: OffersTabProps) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -53,76 +55,58 @@ export function OffersTab({
     try {
       const candidate = candidates.find(c => c.id === candidateId);
       console.log('[v0] [ENRICH] Starting enrichment for candidate:', candidateId);
+      console.log('[v0] [ENRICH] Candidate:', candidate?.name, 'LinkedIn URL:', candidate?.linkedin_url);
 
-      if (!candidate) return;
-
-      const { scrapeLinkedInProfile, findLinkedInProfile } = await import('@/lib/api-service');
-      let linkedInUrl = candidate.linkedin_url;
-
-      // 1. Auto-discover LinkedIn URL if missing
-      if (!linkedInUrl) {
-        console.log('[v0] [ENRICH] No LinkedIn URL, attempting discovery...');
-
-        // Use company from first experience if available
-        const company = candidate.experiences?.[0]?.institution_name;
-
-        const foundUrl = await findLinkedInProfile(candidate.name, company, candidate.location);
-
-        if (foundUrl) {
-          console.log('[v0] [ENRICH] LinkedIn URL found:', foundUrl);
-          linkedInUrl = foundUrl;
-
-          // Persist ANY found URL immediately to DB
-          console.log('[v0] [ENRICH] Persisting found URL to DB...');
-          await onEnrichWithLinkedIn?.(candidateId, {
-            parsed_data: {
-              ...((candidate as any).parsed_data || {}),
-              linkedin_url: foundUrl
-            }
-          });
-        }
-      }
-
-      console.log('[v0] [ENRICH] Candidate:', candidate.name, 'Final LinkedIn URL:', linkedInUrl);
-
-      if (!linkedInUrl) {
-        console.log('[v0] [ENRICH] ERROR: Could not find LinkedIn URL for candidate:', candidate.name);
+      if (!candidate) {
+        console.log('[v0] [ENRICH] ERROR: Candidate not found');
         setEnrichLoadingId(null);
         return;
       }
 
+      let linkedInUrl = candidate.linkedin_url;
+
+      // If no LinkedIn URL, try to discover it
+      if (!linkedInUrl) {
+        console.log('[v0] [ENRICH] No LinkedIn URL, attempting discovery...');
+        const { findLinkedInProfile } = await import('@/lib/api-service');
+
+        // Get company from first experience
+        const company = candidate.experiences?.[0]?.institution_name;
+
+        linkedInUrl = await findLinkedInProfile(
+          candidate.name,
+          company,
+          candidate.location
+        );
+
+        console.log('[v0] [ENRICH] Candidate:', candidate.name, 'Final LinkedIn URL:', linkedInUrl);
+
+        if (!linkedInUrl) {
+          console.log('[v0] [ENRICH] ERROR: Could not find LinkedIn URL for candidate:', candidate.name);
+          setEnrichLoadingId(null);
+          return;
+        }
+
+        // Save discovered LinkedIn URL to database
+        console.log('[v0] [ENRICH] Saving discovered LinkedIn URL to database');
+        await onUpdateCandidateLinkedIn?.(candidateId, linkedInUrl);
+
+        // Update local candidate object for immediate use
+        candidate.linkedin_url = linkedInUrl;
+      }
+
       console.log('[v0] [ENRICH] Starting LinkedIn scrape for URL:', linkedInUrl);
 
-      // 2. Scrape LinkedIn profile (passing name for local cache lookup)
+      // Scrape LinkedIn profile data using the URL
+      const { scrapeLinkedInProfile } = await import('@/lib/api-service');
       const linkedInData = await scrapeLinkedInProfile(linkedInUrl, candidate.name);
 
       console.log('[v0] [ENRICH] Scrape result:', linkedInData);
 
       if (linkedInData) {
         console.log('[v0] [ENRICH] SUCCESS: LinkedIn data received, updating candidate');
-
-        // 3. Update candidate with Enriched Data AND the URL (in case it was just found)
-        // We merge the new LinkedIn data into the existing parsed_data
-        const existingParsedData = (candidate as any).experiences ? {
-          name: candidate.name,
-          email: candidate.email,
-          location: candidate.location,
-          about: candidate.about,
-          linkedin_url: linkedInUrl,
-          experiences: candidate.experiences,
-          educations: candidate.educations,
-          skills: candidate.skills,
-        } : {};
-
-        onEnrichWithLinkedIn?.(candidateId, {
-          parsed_data: {
-            ...existingParsedData,
-            linkedin_url: linkedInUrl, // Ensure URL is saved
-            linkedinData: linkedInData
-          },
-          enriched: true
-        });
-
+        // Call handler to update candidate with LinkedIn data in parent
+        onEnrichWithLinkedIn?.(candidateId, linkedInData);
       } else {
         console.log('[v0] [ENRICH] WARNING: No data returned from LinkedIn scrape');
       }
@@ -154,19 +138,23 @@ export function OffersTab({
 
       console.log('[v0] Resume parsed:', { name: resume.name, linkedInUrl });
 
+      // Extract email from contacts (usually first contact is email)
+      const email = resume.contacts?.find(c => c.includes('@')) || undefined;
+
       // Create candidate with parsed data and LinkedIn URL for future enrichment
       const newCandidate: Candidate = {
         id: `uploaded-${Date.now()}`,
         jobOfferId: selectedJobId || undefined,
-        source: 'CVthèque',
+        source: 'cvtheque',
         score: 0,
         currentRound: 0,
         status: 'Pending',
         name: resume.name,
+        email: email,
         location: resume.location || 'Not specified',
-        about: resume.summary || `Resume uploaded: ${file.name}`,
-        linkedin_url: linkedInUrl || '',
-        open_to_work: true,
+        about: resume.about || `Resume uploaded: ${file.name}`,
+        linkedin_url: linkedInUrl || resume.linkedin_url || '',
+        open_to_work: resume.open_to_work ?? true,
         experiences: resume.experiences || [],
         educations: resume.educations || [],
         skills: resume.skills || [],
@@ -310,7 +298,7 @@ export function OffersTab({
               <Button
                 size="sm"
                 className="gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
-                onClick={() => document.getElementById(`resume-upload-${selectedJobId}`).click()}
+                onClick={() => document.getElementById(`resume-upload-${selectedJobId}`)?.click()}
                 disabled={uploadingResume}
               >
                 <Upload className="w-4 h-4" />

@@ -11,7 +11,8 @@ export default function OffersPage() {
         scoreCandidates,
         updateJobRounds,
         updateJobStatus,
-        updateCandidateResume
+        updateCandidateResume,
+        updateCandidateLinkedIn
     } = useATS();
 
     return (
@@ -25,6 +26,7 @@ export default function OffersPage() {
                 onUpdateRounds={updateJobRounds}
                 onToggleOfferStatus={updateJobStatus}
                 onEnrichWithLinkedIn={updateCandidateResume}
+                onUpdateCandidateLinkedIn={updateCandidateLinkedIn}
             />
         </div>
     );

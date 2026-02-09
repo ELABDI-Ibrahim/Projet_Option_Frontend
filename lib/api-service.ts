@@ -3,35 +3,36 @@
 const BASE_URL = process.env.NEXT_PUBLIC_RESUME_API_URL || 'https://web-production-f19a8.up.railway.app';
 
 export interface ResumeParseData {
-  name?: string;
-  email?: string;
-  phone?: string;
-  location?: string;
-  summary?: string;
-  linkedin_url?: string;
-  open_to_work?: boolean;
-  experiences?: Array<{
+  linkedin_url: string;
+  name: string;
+  location: string;
+  about: string | null;
+  open_to_work: boolean;
+  experiences: Array<{
     position_title: string;
     institution_name: string;
+    linkedin_url: string;
     from_date: string;
     to_date: string;
     duration: string;
     location: string;
     description: string;
   }>;
-  educations?: Array<{
-    institution_name: string;
+  educations: Array<{
     degree: string;
+    institution_name: string;
+    linkedin_url: string;
     from_date: string;
     to_date: string;
+    duration: string;
     location: string;
-    description?: string;
+    description: string;
   }>;
-  skills?: Array<{
+  skills: Array<{
     category: string;
     items: string[];
   }>;
-  projects?: Array<{
+  projects: Array<{
     project_name: string;
     role: string;
     from_date: string;
@@ -41,9 +42,9 @@ export interface ResumeParseData {
     description: string;
     url: string;
   }>;
-  contacts?: string[];
-  accomplishments?: string[];
-  interests?: string[];
+  interests: string[];
+  accomplishments: string[];
+  contacts: string[];
   linkedinData?: LinkedInProfileData;
 }
 
@@ -75,9 +76,54 @@ export interface LinkedInProfileData {
   interests?: string[];
 }
 
-// ... existing checkApiHealth ...
+/**
+ * Check API health status
+ */
+export async function checkApiHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${BASE_URL}/health`);
+    const data = await response.json();
+    return data.status === 'healthy';
+  } catch (error) {
+    console.log('[v0] API health check failed:', error);
+    return false;
+  }
+}
 
-// ... existing parseResume ...
+/**
+ * Parse resume from file
+ * Accepts PDF, DOC, DOCX, TXT formats
+ */
+export async function parseResume(file: File): Promise<ResumeParseData | null> {
+  try {
+    console.log('[v0] [PARSE] Starting resume parsing');
+    console.log('[v0] [PARSE] File name:', file.name, 'Size:', file.size);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${BASE_URL}/api/parse-resume`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    console.log('[v0] [PARSE] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('[v0] [PARSE] ERROR response:', errorText);
+      throw new Error(`API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('[v0] [PARSE] Response data:', JSON.stringify(data));
+    console.log('[v0] [PARSE] Extracted data - Name:', data.data?.name, 'LinkedIn URL:', data.data?.linkedin_url);
+
+    return data.data || null;
+  } catch (error) {
+    console.log('[v0] [PARSE] ERROR:', error);
+  }
+}
 
 /**
  * Find LinkedIn profile URL using name, company, and location
@@ -107,7 +153,7 @@ export async function findLinkedInProfile(
     }
 
     const data = await response.json();
-    console.log('[v0] Find LinkedIn Response full data:', JSON.stringify(data));
+    console.log('[v0] Find LinkedIn Response:', JSON.stringify(data));
     console.log('[v0] LinkedIn profile found:', data.data?.url);
 
     return data.data?.url || null;
@@ -128,16 +174,18 @@ export async function scrapeLinkedInProfile(
   try {
     console.log('[v0] [SCRAPE] Starting LinkedIn scrape');
     console.log('[v0] [SCRAPE] Profile URL:', profileUrl);
-    console.log('[v0] [SCRAPE] Name (for cache):', name);
+    console.log('[v0] [SCRAPE] Name:', name);
     console.log('[v0] [SCRAPE] API Endpoint:', `${BASE_URL}/api/scrape-linkedin`);
+
+    const payload: any = { profile_url: profileUrl };
+    if (name) {
+      payload.name = name;
+    }
 
     const response = await fetch(`${BASE_URL}/api/scrape-linkedin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profile_url: profileUrl,
-        name: name // Pass name for local caching
-      }),
+      body: JSON.stringify(payload),
     });
 
     console.log('[v0] [SCRAPE] Response status:', response.status);
@@ -155,7 +203,6 @@ export async function scrapeLinkedInProfile(
     return data.data || null;
   } catch (error) {
     console.log('[v0] [SCRAPE] ERROR:', error);
-    return null; // Return null on error
   }
 }
 
@@ -220,13 +267,40 @@ export function mergeResumeAndLinkedIn(
   linkedIn: LinkedInProfileData
 ): ResumeParseData {
   return {
+    linkedin_url: resume.linkedin_url,
     name: linkedIn.name || resume.name,
-    email: resume.email,
-    phone: resume.phone,
     location: linkedIn.location || resume.location,
-    summary: linkedIn.about || resume.summary,
-    experiences: linkedIn.experience || resume.experiences,
-    educations: linkedIn.education || resume.educations,
-    skills: [...new Set([...(resume.skills || []), ...(linkedIn.skills || [])])],
+    about: linkedIn.about || resume.about,
+    open_to_work: resume.open_to_work,
+    experiences: (linkedIn.experiences || resume.experiences || []).map(exp => ({
+      position_title: exp.position_title,
+      institution_name: exp.institution_name,
+      linkedin_url: (exp as any).linkedin_url || '',
+      from_date: exp.from_date,
+      to_date: exp.to_date,
+      duration: exp.duration || '',
+      location: exp.location || '',
+      description: exp.description || ''
+    })),
+    educations: (linkedIn.educations || resume.educations || []).map(edu => ({
+      degree: edu.degree,
+      institution_name: edu.institution_name,
+      linkedin_url: (edu as any).linkedin_url || '',
+      from_date: edu.from_date,
+      to_date: edu.to_date,
+      duration: (edu as any).duration || '',
+      location: edu.location || '',
+      description: edu.description || ''
+    })),
+    skills: [
+      ...resume.skills,
+      ...(linkedIn.skills && linkedIn.skills.length > 0
+        ? [{ category: 'LinkedIn Skills', items: linkedIn.skills }]
+        : [])
+    ],
+    projects: resume.projects,
+    interests: [...new Set([...resume.interests, ...(linkedIn.interests || [])])],
+    accomplishments: [...new Set([...resume.accomplishments, ...(linkedIn.accomplishments || [])])],
+    contacts: [...new Set([...resume.contacts, ...(linkedIn.contacts || [])])],
   };
 }

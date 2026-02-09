@@ -125,8 +125,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
             const newJob = await db.createJobOffer({
                 title: jobData.title,
                 description: jobData.description,
-                status: 'Open',
-                skills_required: []
+                status: 'Open'
             });
 
             if (newJob) {
@@ -168,7 +167,8 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
             const newCandidate = await db.createCandidate({
                 full_name: candidate.name,
                 email: candidate.email,
-                linkedIn_url: candidate.linkedin_url, // Note: DB might use lowercase 'linkedin_url' but types use camelCase locally sometimes. Checking DB Service... it uses all lowercase in insert.
+                phone: candidate.phone,
+                linkedin_url: candidate.linkedin_url,
                 location: candidate.location,
                 source: candidate.source || 'upload'
             });
@@ -274,7 +274,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         console.log('[ATS Context] Scoring candidates for job:', jobId);
     };
 
-    const updateCandidateResume = async (candidateId: string, updates: any) => {
+    const updateCandidateResume = async (candidateId: string, linkedInData: any) => {
         try {
             const candidate = candidates.find(c => c.id === candidateId);
             if (!candidate || !(candidate as any).resume_id) {
@@ -282,11 +282,58 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
-            // resume_id is added in transformedCandidates
-            await db.updateResume((candidate as any).resume_id, updates);
+            console.log('[ATS Context] Enriching resume with LinkedIn data:', linkedInData);
+
+            // Get current resume data
+            const currentResume = await db.getResume((candidate as any).resume_id);
+            const currentParsedData = currentResume.parsed_data || {};
+
+            // Merge LinkedIn data into parsed_data
+            const updatedParsedData = {
+                ...currentParsedData,
+                linkedinData: linkedInData
+            };
+
+            // Update resume with enriched data
+            await db.updateResumeData((candidate as any).resume_id, updatedParsedData);
+
+            // Also update enriched flag
+            await db.updateResume((candidate as any).resume_id, { enriched: true });
+
             await loadData();
+            console.log('[ATS Context] Resume enriched successfully');
         } catch (error) {
             console.error('[ATS Context] Error updating resume:', error);
+        }
+    };
+
+    const updateCandidateLinkedIn = async (candidateId: string, linkedInUrl: string) => {
+        try {
+            console.log('[ATS Context] Updating LinkedIn URL for candidate:', candidateId, linkedInUrl);
+
+            const candidate = candidates.find(c => c.id === candidateId);
+            if (!candidate) {
+                console.error('[ATS Context] Candidate not found:', candidateId);
+                return;
+            }
+
+            // Update candidate's linkedin_url in candidates table
+            await db.updateCandidate(candidateId, { linkedin_url: linkedInUrl });
+
+            // If candidate has a resume, also update parsed_data.linkedin_url
+            if ((candidate as any).resume_id) {
+                const currentResume = await db.getResume((candidate as any).resume_id);
+                const updatedParsedData = {
+                    ...currentResume.parsed_data,
+                    linkedin_url: linkedInUrl
+                };
+                await db.updateResumeData((candidate as any).resume_id, updatedParsedData);
+            }
+
+            await loadData();
+            console.log('[ATS Context] LinkedIn URL updated successfully');
+        } catch (error) {
+            console.error('[ATS Context] Error updating LinkedIn URL:', error);
         }
     };
 
@@ -302,7 +349,8 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         updateCandidateStage,
         updateJobRounds,
         scoreCandidates,
-        updateCandidateResume
+        updateCandidateResume,
+        updateCandidateLinkedIn
     };
 
     return (
