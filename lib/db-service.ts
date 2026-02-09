@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import type { JobOffer, Candidate, Application, PipelineStage, Resume, ApplicationScore } from './supabase';
 
+export { supabase } from './supabase';
+
 // Job Offers
 export async function getJobOffers() {
   const { data, error } = await supabase

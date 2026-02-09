@@ -275,6 +275,7 @@ export interface Candidate {
     to_date: string;
     location: string;
   }>;
+  skills?: string[]; // Add this line
   enriched: boolean;
   linkedinData?: {
     name?: string;
