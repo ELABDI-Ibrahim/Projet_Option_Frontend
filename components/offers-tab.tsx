@@ -13,7 +13,7 @@ import { Zap, Plus, Upload, Search, Lock, Unlock, Linkedin } from "lucide-react"
 import { ResumeViewer } from './resume-viewer';
 import { RoundsEditor } from './rounds-editor';
 import { enrichCandidateFromResume } from '@/lib/api-service';
-import type { Candidate, JobOffer, Round } from '@/lib/mock-data';
+import type { Candidate, JobOffer, Round } from '@/lib/types';
 
 interface OffersTabProps {
   jobOffers: JobOffer[];
@@ -44,7 +44,7 @@ export function OffersTab({
   const [uploadingResume, setUploadingResume] = useState(false);
 
   const selectedJob = jobOffers.find(j => j.id === selectedJobId);
-  const jobCandidates = selectedJobId 
+  const jobCandidates = selectedJobId
     ? candidates.filter(c => c.jobOfferId === selectedJobId)
     : [];
 
@@ -53,32 +53,76 @@ export function OffersTab({
     try {
       const candidate = candidates.find(c => c.id === candidateId);
       console.log('[v0] [ENRICH] Starting enrichment for candidate:', candidateId);
-      console.log('[v0] [ENRICH] Candidate:', candidate?.name, 'LinkedIn URL:', candidate?.linkedin_url);
 
-      if (!candidate) {
-        console.log('[v0] [ENRICH] ERROR: Candidate not found');
+      if (!candidate) return;
+
+      const { scrapeLinkedInProfile, findLinkedInProfile } = await import('@/lib/api-service');
+      let linkedInUrl = candidate.linkedin_url;
+
+      // 1. Auto-discover LinkedIn URL if missing
+      if (!linkedInUrl) {
+        console.log('[v0] [ENRICH] No LinkedIn URL, attempting discovery...');
+
+        // Use company from first experience if available
+        const company = candidate.experiences?.[0]?.institution_name;
+
+        const foundUrl = await findLinkedInProfile(candidate.name, company, candidate.location);
+
+        if (foundUrl) {
+          console.log('[v0] [ENRICH] LinkedIn URL found:', foundUrl);
+          linkedInUrl = foundUrl;
+
+          // Persist ANY found URL immediately to DB
+          console.log('[v0] [ENRICH] Persisting found URL to DB...');
+          await onEnrichWithLinkedIn?.(candidateId, {
+            parsed_data: {
+              ...((candidate as any).parsed_data || {}),
+              linkedin_url: foundUrl
+            }
+          });
+        }
+      }
+
+      console.log('[v0] [ENRICH] Candidate:', candidate.name, 'Final LinkedIn URL:', linkedInUrl);
+
+      if (!linkedInUrl) {
+        console.log('[v0] [ENRICH] ERROR: Could not find LinkedIn URL for candidate:', candidate.name);
         setEnrichLoadingId(null);
         return;
       }
 
-      if (!candidate.linkedin_url) {
-        console.log('[v0] [ENRICH] ERROR: No LinkedIn URL for candidate:', candidate.name);
-        setEnrichLoadingId(null);
-        return;
-      }
+      console.log('[v0] [ENRICH] Starting LinkedIn scrape for URL:', linkedInUrl);
 
-      console.log('[v0] [ENRICH] Starting LinkedIn scrape for URL:', candidate.linkedin_url);
-
-      // Scrape LinkedIn profile data using the URL from resume
-      const { scrapeLinkedInProfile } = await import('@/lib/api-service');
-      const linkedInData = await scrapeLinkedInProfile(candidate.linkedin_url);
+      // 2. Scrape LinkedIn profile (passing name for local cache lookup)
+      const linkedInData = await scrapeLinkedInProfile(linkedInUrl, candidate.name);
 
       console.log('[v0] [ENRICH] Scrape result:', linkedInData);
 
       if (linkedInData) {
         console.log('[v0] [ENRICH] SUCCESS: LinkedIn data received, updating candidate');
-        // Call handler to update candidate with LinkedIn data in parent
-        onEnrichWithLinkedIn?.(candidateId, linkedInData);
+
+        // 3. Update candidate with Enriched Data AND the URL (in case it was just found)
+        // We merge the new LinkedIn data into the existing parsed_data
+        const existingParsedData = (candidate as any).experiences ? {
+          name: candidate.name,
+          email: candidate.email,
+          location: candidate.location,
+          about: candidate.about,
+          linkedin_url: linkedInUrl,
+          experiences: candidate.experiences,
+          educations: candidate.educations,
+          skills: candidate.skills,
+        } : {};
+
+        onEnrichWithLinkedIn?.(candidateId, {
+          parsed_data: {
+            ...existingParsedData,
+            linkedin_url: linkedInUrl, // Ensure URL is saved
+            linkedinData: linkedInData
+          },
+          enriched: true
+        });
+
       } else {
         console.log('[v0] [ENRICH] WARNING: No data returned from LinkedIn scrape');
       }
@@ -125,13 +169,18 @@ export function OffersTab({
         open_to_work: true,
         experiences: resume.experiences || [],
         educations: resume.educations || [],
+        skills: resume.skills || [],
+        projects: resume.projects || [],
+        contacts: resume.contacts || [],
+        accomplishments: resume.accomplishments || [],
+        interests: resume.interests || [],
         enriched: false
       };
 
       onAddCandidate(newCandidate);
     } catch (error) {
       console.log('[v0] Error parsing resume:', error);
-      
+
       // Fallback: create candidate with basic file name extraction
       const basicCandidate: Candidate = {
         id: `uploaded-${Date.now()}`,
@@ -149,7 +198,7 @@ export function OffersTab({
         educations: [],
         enriched: false
       };
-      
+
       onAddCandidate(basicCandidate);
     } finally {
       setUploadingResume(false);
@@ -166,22 +215,21 @@ export function OffersTab({
           {jobOffers.map(job => (
             <Card
               key={job.id}
-              className={`p-4 cursor-pointer transition-all border-2 ${
-                selectedJobId === job.id 
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
-                  : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'
-              }`}
+              className={`p-4 cursor-pointer transition-all border-2 ${selectedJobId === job.id
+                ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'
+                }`}
               onClick={() => setSelectedJobId(job.id)}
             >
               <h4 className="font-bold text-sm">{job.title}</h4>
               <p className={`text-xs mt-1 line-clamp-2 ${selectedJobId === job.id ? 'text-blue-100' : 'text-slate-600'}`}>
                 {job.description}
               </p>
-              <Badge 
-                variant={selectedJobId === job.id ? 'default' : 'secondary'} 
+              <Badge
+                variant={selectedJobId === job.id ? 'default' : 'secondary'}
                 className={`mt-2 text-xs ${selectedJobId === job.id ? 'bg-blue-400 text-white' : ''}`}
               >
-                {jobCandidates.length} candidates
+                {job.candidateCount || 0} candidates
               </Badge>
             </Card>
           ))}
@@ -199,8 +247,8 @@ export function OffersTab({
                   <h3 className="font-bold text-xl text-slate-900 mb-3">{selectedJob.title}</h3>
                   <p className="text-sm text-slate-700 mb-5 leading-relaxed">{selectedJob.description}</p>
                 </div>
-                <RoundsEditor 
-                  rounds={selectedJob.rounds || []} 
+                <RoundsEditor
+                  rounds={selectedJob.rounds || []}
                   jobTitle={selectedJob.title}
                   onSaveRounds={(rounds) => onUpdateRounds?.(selectedJob.id, rounds)}
                 />
@@ -334,11 +382,10 @@ export function OffersTab({
                             variant="ghost"
                             onClick={() => handleEnrich(candidate.id)}
                             disabled={enrichLoadingId === candidate.id || candidate.enriched}
-                            className={`h-7 text-xs gap-1 ${
-                              candidate.enriched
-                                ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
-                            } disabled:text-slate-400`}
+                            className={`h-7 text-xs gap-1 ${candidate.enriched
+                              ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                              : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                              } disabled:text-slate-400`}
                             title={candidate.enriched ? 'Profile enriched from LinkedIn' : 'Enrich profile from LinkedIn'}
                           >
                             <Linkedin className="w-3 h-3" />

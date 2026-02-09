@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, X, Search as SearchIcon, Lock, Unlock } from "lucide-react";
-import type { JobOffer } from '@/lib/mock-data';
+import type { JobOffer } from '@/lib/types';
 
 interface JobBoardTabProps {
   jobOffers: JobOffer[];

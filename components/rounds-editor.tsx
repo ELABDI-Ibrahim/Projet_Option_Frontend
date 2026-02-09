@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Plus, X, Edit2, CheckCircle } from "lucide-react";
-import type { Round } from '@/lib/mock-data';
+import type { Round } from '@/lib/types';
 
 interface RoundsEditorProps {
   rounds: Round[];

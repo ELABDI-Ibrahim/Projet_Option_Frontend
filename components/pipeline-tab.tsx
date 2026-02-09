@@ -8,68 +8,88 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Clock } from "lucide-react";
 import { ResumeViewer } from './resume-viewer';
-import type { Candidate, JobOffer } from '@/lib/mock-data';
-
-const statusConfig = {
-  Pending: { icon: Clock, color: 'bg-yellow-600', label: 'Pending Review' },
-  'Next Round': { icon: CheckCircle2, color: 'bg-green-600', label: 'Next Round' },
-  Declined: { icon: XCircle, color: 'bg-red-600', label: 'Declined' }
-};
+import type { Candidate, JobOffer } from '@/lib/types';
 
 interface PipelineTabProps {
   candidates: Candidate[];
   jobOffers: JobOffer[];
   onUpdateStatus: (candidateId: string, status: 'Pending' | 'Next Round' | 'Declined') => void;
-  onUpdateRound: (candidateId: string, roundIndex: number) => void;
+  onUpdateRound: (candidateId: string, roundIndex: number) => void; // Deprecated but kept for compatibility
+  onUpdateStage?: (candidateId: string, stageId: string) => void;
 }
 
-export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateRound }: PipelineTabProps) {
+export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateStage }: PipelineTabProps) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [resumeViewerOpen, setResumeViewerOpen] = useState(false);
   const [dialogState, setDialogState] = useState<{
     open: boolean;
-    action: 'nextRound' | 'decline' | null;
+    action: 'moveStage' | 'decline' | null;
     candidateId: string | null;
+    targetStageId?: string;
   }>({ open: false, action: null, candidateId: null });
 
   const selectedJob = jobOffers.find(j => j.id === selectedJobId);
-  const jobCandidates = selectedJobId 
+  const jobCandidates = selectedJobId
     ? candidates.filter(c => c.jobOfferId === selectedJobId)
     : [];
-  
-  const getRoundsByStatus = () => {
+
+  const getCandidatesByStage = () => {
     const rounds = selectedJob?.rounds || [];
-    const groupedByRound: Record<number, Candidate[]> = {};
-    
+    const groupedByStage: Record<string, Candidate[]> = {};
+
+    // Initialize groups
+    rounds.forEach(round => {
+      groupedByStage[round.id] = [];
+    });
+
+    // Distribute candidates
     jobCandidates.forEach(candidate => {
       if (candidate.status !== 'Declined') {
-        if (!groupedByRound[candidate.currentRound]) {
-          groupedByRound[candidate.currentRound] = [];
+        // If candidate has a specific stage ID, use it
+        if (candidate.currentStageId && groupedByStage[candidate.currentStageId]) {
+          groupedByStage[candidate.currentStageId].push(candidate);
+        } else {
+          // Fallback logic: if no stage ID (legacy), put in first stage
+          // OR map currentRound to stage index?
+          // Let's default to the first stage if no match
+          const firstStageId = rounds[0]?.id;
+          if (firstStageId) {
+            groupedByStage[firstStageId].push(candidate);
+          }
         }
-        groupedByRound[candidate.currentRound].push(candidate);
       }
     });
-    
+
     const declined = jobCandidates.filter(c => c.status === 'Declined');
-    
-    return { groupedByRound, declined, rounds };
+
+    return { groupedByStage, declined, rounds };
   };
 
-  const { groupedByRound, declined, rounds } = getRoundsByStatus();
+  const { groupedByStage, declined, rounds } = getCandidatesByStage();
 
-  const handleAction = (action: 'nextRound' | 'decline', candidateId: string) => {
-    setDialogState({ open: true, action, candidateId });
+  const handleMoveStage = (candidateId: string, targetStageId: string) => {
+    setDialogState({
+      open: true,
+      action: 'moveStage',
+      candidateId,
+      targetStageId
+    });
+  };
+
+  const handleDecline = (candidateId: string) => {
+    setDialogState({
+      open: true,
+      action: 'decline',
+      candidateId
+    });
   };
 
   const confirmAction = () => {
     if (dialogState.candidateId && dialogState.action) {
-      if (dialogState.action === 'nextRound') {
-        const candidate = candidates.find(c => c.id === dialogState.candidateId);
-        if (candidate && candidate.currentRound < (selectedJob?.rounds?.length || 0) - 1) {
-          onUpdateRound(dialogState.candidateId, candidate.currentRound + 1);
-        }
-      } else {
+      if (dialogState.action === 'moveStage' && dialogState.targetStageId && onUpdateStage) {
+        onUpdateStage(dialogState.candidateId, dialogState.targetStageId);
+      } else if (dialogState.action === 'decline') {
         onUpdateStatus(dialogState.candidateId, 'Declined');
       }
       setDialogState({ open: false, action: null, candidateId: null });
@@ -104,67 +124,36 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateRou
 
       {/* Pipeline Grid */}
       {selectedJobId ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {rounds.map((round) => {
-            const roundCandidates = groupedByRound[round.order - 1] || [];
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 overflow-x-auto pb-4">
+          {rounds.map((round, index) => {
+            const stageCandidates = groupedByStage[round.id] || [];
+            const nextStage = rounds[index + 1];
+
             return (
-              <div key={round.id} className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <div key={round.id} className="min-w-[280px] bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex flex-col h-full">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-5 h-5 text-white bg-blue-500 rounded-full p-1 flex items-center justify-center text-xs font-bold">{round.order}</div>
+                  <div className="w-5 h-5 text-white bg-blue-500 rounded-full p-1 flex items-center justify-center text-xs font-bold">{index + 1}</div>
                   <h3 className="font-bold text-sm text-slate-900">{round.name}</h3>
-                  <Badge className="ml-auto bg-blue-600 text-white font-bold">{roundCandidates.length}</Badge>
+                  <Badge className="ml-auto bg-blue-600 text-white font-bold">{stageCandidates.length}</Badge>
                 </div>
 
-                <div className="space-y-3">
-                  {roundCandidates.map(candidate => (
+                <div className="space-y-3 flex-1">
+                  {stageCandidates.map(candidate => (
                     <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <h4 className="font-semibold text-sm text-slate-900 truncate">{candidate.name}</h4>
                           <p className="text-xs text-slate-500 truncate">{candidate.location}</p>
                         </div>
-                        <Badge className={`shrink-0 font-bold text-xs ${
-                          candidate.score > 0 
-                            ? 'bg-green-600 text-white' 
-                            : 'bg-slate-200 text-slate-600'
-                        }`}>
+                        <Badge className={`shrink-0 font-bold text-xs ${candidate.score > 0
+                          ? 'bg-green-600 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                          }`}>
                           {candidate.score > 0 ? `${candidate.score}%` : 'Not scored'}
                         </Badge>
                       </div>
 
-                      {candidate.status === 'Pending' && (
-                        <div className="flex gap-1.5 text-xs pt-2 border-t border-slate-200">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSelectedCandidate(candidate);
-                              setResumeViewerOpen(true);
-                            }}
-                            className="h-6 flex-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-medium"
-                          >
-                            View
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 font-medium"
-                            onClick={() => handleAction('nextRound', candidate.id)}
-                          >
-                            Advance
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 font-medium"
-                            onClick={() => handleAction('decline', candidate.id)}
-                          >
-                            Decline
-                          </Button>
-                        </div>
-                      )}
-
-                      {candidate.status === 'Next Round' && (
+                      <div className="flex gap-1.5 text-xs pt-2 border-t border-slate-200">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -172,17 +161,37 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateRou
                             setSelectedCandidate(candidate);
                             setResumeViewerOpen(true);
                           }}
-                          className="w-full h-6 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-medium"
+                          className="h-6 flex-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-medium px-1"
                         >
-                          View Resume
+                          View
                         </Button>
-                      )}
+
+                        {nextStage && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 font-medium px-1"
+                            onClick={() => handleMoveStage(candidate.id, nextStage.id)}
+                          >
+                            Advance
+                          </Button>
+                        )}
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 font-medium px-1"
+                          onClick={() => handleDecline(candidate.id)}
+                        >
+                          Decline
+                        </Button>
+                      </div>
                     </Card>
                   ))}
 
-                  {roundCandidates.length === 0 && (
+                  {stageCandidates.length === 0 && (
                     <div className="text-center py-8 text-slate-400 text-sm font-medium">
-                      No candidates yet
+                      No candidates
                     </div>
                   )}
                 </div>
@@ -194,21 +203,21 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateRou
         <Card className="p-12 text-center bg-slate-50 border border-slate-200">
           <div className="text-slate-300 text-4xl mb-3">📊</div>
           <p className="text-lg font-semibold text-slate-600">Select a job offer to view the pipeline</p>
-          <p className="text-sm text-slate-500 mt-2">Track candidates through Pending Review, Next Round, and Declined stages.</p>
+          <p className="text-sm text-slate-500 mt-2">Track candidates through customized pipeline stages.</p>
         </Card>
       )}
 
       {/* Declined Column */}
       {declined.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mt-6">
           <div className="flex items-center gap-3 mb-4">
             <XCircle className="w-5 h-5 text-white bg-red-500 rounded-full p-1" />
             <h3 className="font-bold text-sm text-slate-900">Declined</h3>
             <Badge className="ml-auto bg-slate-600 text-white font-bold">{declined.length}</Badge>
           </div>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {declined.map(candidate => (
-              <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow">
+              <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow opacity-75">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-sm text-slate-900 truncate">{candidate.name}</h4>
@@ -236,22 +245,30 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateRou
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {dialogState.action === 'nextRound' ? 'Advance to Next Round?' : 'Decline Candidate?'}
+              {dialogState.action === 'moveStage' ? 'Move Candidate?' : 'Decline Candidate?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {dialogState.action === 'nextRound'
-                ? 'This candidate will be moved to the Next Round stage.'
+              {dialogState.action === 'moveStage'
+                ? 'This candidate will be moved to the next stage in the pipeline.'
                 : 'This candidate will be marked as declined. This action cannot be undone.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-3 justify-end">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmAction}>
-              {dialogState.action === 'nextRound' ? 'Advance' : 'Decline'}
+              {dialogState.action === 'moveStage' ? 'Move' : 'Decline'}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Debug Info */}
+      <div className="mt-8 p-4 bg-slate-100 rounded text-xs font-mono text-slate-500">
+        <p className="font-bold">Debug Info:</p>
+        <p>Selected Job ID: {selectedJobId}</p>
+        <p>Job Rounds: {rounds.map(r => `${r.name} (${r.id})`).join(', ')}</p>
+        <p>Candidates in View: {jobCandidates.length}</p>
+      </div>
     </div>
   );
 }

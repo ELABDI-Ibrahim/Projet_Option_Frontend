@@ -9,6 +9,7 @@ export interface ResumeParseData {
   location?: string;
   summary?: string;
   linkedin_url?: string;
+  open_to_work?: boolean;
   experiences?: Array<{
     position_title: string;
     institution_name: string;
@@ -24,8 +25,26 @@ export interface ResumeParseData {
     from_date: string;
     to_date: string;
     location: string;
+    description?: string;
   }>;
-  skills?: string[];
+  skills?: Array<{
+    category: string;
+    items: string[];
+  }>;
+  projects?: Array<{
+    project_name: string;
+    role: string;
+    from_date: string;
+    to_date: string;
+    duration: string;
+    technologies: string[];
+    description: string;
+    url: string;
+  }>;
+  contacts?: string[];
+  accomplishments?: string[];
+  interests?: string[];
+  linkedinData?: LinkedInProfileData;
 }
 
 export interface LinkedInProfileData {
@@ -33,70 +52,32 @@ export interface LinkedInProfileData {
   headline?: string;
   location?: string;
   about?: string;
-  experience?: Array<{
+  experiences?: Array<{
     position_title: string;
     institution_name: string;
     from_date: string;
     to_date: string;
+    duration?: string;
+    location?: string;
     description?: string;
   }>;
-  education?: Array<{
+  educations?: Array<{
     institution_name: string;
     degree: string;
-    from_date?: string;
-    to_date?: string;
+    from_date: string;
+    to_date: string;
+    location?: string;
+    description?: string;
   }>;
   skills?: string[];
+  contacts?: string[];
+  accomplishments?: string[];
+  interests?: string[];
 }
 
-/**
- * Check API health status
- */
-export async function checkApiHealth(): Promise<boolean> {
-  try {
-    const response = await fetch(`${BASE_URL}/health`);
-    const data = await response.json();
-    return data.status === 'healthy';
-  } catch (error) {
-    console.log('[v0] API health check failed:', error);
-    return false;
-  }
-}
+// ... existing checkApiHealth ...
 
-/**
- * Parse resume from file
- * Accepts PDF, DOC, DOCX, TXT formats
- */
-export async function parseResume(file: File): Promise<ResumeParseData | null> {
-  try {
-    console.log('[v0] [PARSE] Starting resume parsing');
-    console.log('[v0] [PARSE] File name:', file.name, 'Size:', file.size);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(`${BASE_URL}/api/parse-resume`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    console.log('[v0] [PARSE] Response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('[v0] [PARSE] ERROR response:', errorText);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('[v0] [PARSE] Response data:', JSON.stringify(data));
-    console.log('[v0] [PARSE] Extracted data - Name:', data.data?.name, 'LinkedIn URL:', data.data?.linkedin_url);
-    
-    return data.data || null;
-  } catch (error) {
-    console.log('[v0] [PARSE] ERROR:', error);
-  }
-}
+// ... existing parseResume ...
 
 /**
  * Find LinkedIn profile URL using name, company, and location
@@ -126,9 +107,10 @@ export async function findLinkedInProfile(
     }
 
     const data = await response.json();
-    console.log('[v0] LinkedIn profile found:', data.linkedin_url);
-    
-    return data.linkedin_url || null;
+    console.log('[v0] Find LinkedIn Response full data:', JSON.stringify(data));
+    console.log('[v0] LinkedIn profile found:', data.data?.url);
+
+    return data.data?.url || null;
   } catch (error) {
     console.log('[v0] Error finding LinkedIn profile:', error);
     return null;
@@ -140,17 +122,22 @@ export async function findLinkedInProfile(
  * Note: Requires session.json on the server
  */
 export async function scrapeLinkedInProfile(
-  profileUrl: string
+  profileUrl: string,
+  name?: string
 ): Promise<LinkedInProfileData | null> {
   try {
     console.log('[v0] [SCRAPE] Starting LinkedIn scrape');
     console.log('[v0] [SCRAPE] Profile URL:', profileUrl);
+    console.log('[v0] [SCRAPE] Name (for cache):', name);
     console.log('[v0] [SCRAPE] API Endpoint:', `${BASE_URL}/api/scrape-linkedin`);
 
     const response = await fetch(`${BASE_URL}/api/scrape-linkedin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile_url: profileUrl }),
+      body: JSON.stringify({
+        profile_url: profileUrl,
+        name: name // Pass name for local caching
+      }),
     });
 
     console.log('[v0] [SCRAPE] Response status:', response.status);
@@ -164,10 +151,11 @@ export async function scrapeLinkedInProfile(
     const data = await response.json();
     console.log('[v0] [SCRAPE] Response data:', JSON.stringify(data));
     console.log('[v0] [SCRAPE] Extracted LinkedIn data:', data.data);
-    
+
     return data.data || null;
   } catch (error) {
     console.log('[v0] [SCRAPE] ERROR:', error);
+    return null; // Return null on error
   }
 }
 

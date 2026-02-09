@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import type { Candidate, JobOffer } from '@/lib/mock-data';
+import type { Candidate, JobOffer } from '@/lib/types';
 
 interface AnalyticsTabProps {
   candidates: Candidate[];
