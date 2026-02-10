@@ -25,51 +25,37 @@ export interface Candidate {
     duration: string;
     location: string;
     description: string;
+    linkedin_url?: string | null; // Added nullable for strict compatibility
   }>;
   educations: Array<{
     institution_name: string;
     degree: string;
     from_date: string;
     to_date: string;
+    duration?: string;
     location: string;
     description?: string;
+    linkedin_url?: string | null; // Added nullable for strict compatibility
   }>;
-  skills?: Array<{
+  skills: Array<{
     category: string;
     items: string[];
   }>;
-  projects?: Array<{
+  projects: Array<{
     project_name: string;
-    role: string;
-    from_date: string;
-    to_date: string;
-    duration: string;
+    role: string | null;
+    from_date: string | null;
+    to_date: string | null;
+    duration: string | null;
     technologies: string[];
-    description: string;
-    url: string;
+    description: string | null;
+    url: string | null;
   }>;
-  contacts?: string[];
-  accomplishments?: string[];
-  interests?: string[];
+  contacts: string[];
+  accomplishments: string[];
+  interests: string[];
   enriched: boolean;
-  experiences?: Array<{
-    position_title: string;
-    institution_name: string;
-    from_date: string;
-    to_date: string;
-    description?: string;
-  }>;
-  educations?: Array<{
-    institution_name: string;
-    degree: string;
-    from_date?: string;
-    to_date?: string;
-  }>;
-  skills?: string[];
-  contacts?: string[];
-  accomplishments?: string[];
-  interests?: string[];
-};
+  linkedinData?: any;
 }
 
 export interface Round {

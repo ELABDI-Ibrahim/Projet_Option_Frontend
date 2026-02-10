@@ -2,6 +2,7 @@ import React from "react"
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { ATSProvider } from '@/lib/ats-context'
+import { ErrorProvider } from '@/lib/error-context'
 import { MainNav } from '@/components/main-nav'
 
 import './globals.css'
@@ -23,10 +24,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        <ATSProvider>
-          <MainNav />
-          {children}
-        </ATSProvider>
+        <ErrorProvider>
+          <ATSProvider>
+            <MainNav />
+            {children}
+          </ATSProvider>
+        </ErrorProvider>
       </body>
     </html>
   )

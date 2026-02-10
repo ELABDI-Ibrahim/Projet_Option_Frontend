@@ -7,26 +7,14 @@ import type { Candidate } from "@/lib/types";
 
 // 1. Extend the base Candidate type to handle dynamic data cleanly
 interface ExtendedCandidate extends Candidate {
-  skills?: any[]; // Can be string[] or {category, items}[]
-  email?: string;
-  contacts?: string[];
-  accomplishments?: string[];
-  interests?: string[];
-  open_to_work?: boolean;
-  projects?: Array<{
-    project_name: string;
-    role: string;
-    from_date: string;
-    to_date: string;
-    duration: string;
-    technologies: string[];
-    description: string;
-    url: string;
-  }>;
+  // Candidate now includes all these fields with correct types (including nulls)
+  // We only need to keep fields that are NOT in Candidate or need stricter types (which we don't here)
   linkedinData?: {
     headline?: string;
     about?: string;
     skills?: string[];
+    experiences?: any[];
+    educations?: any[];
   };
 }
 
@@ -43,7 +31,7 @@ export function ResumeViewer({ candidate, open, onOpenChange }: ResumeViewerProp
   console.log('[RESUME VIEWER] Candidate data:', candidate);
 
   // Extract skills/email with fallbacks
-  const skills = candidate.skills || [];
+  const skills = (candidate.skills || []) as any[];
   const email = candidate.email || '';
   const contacts = candidate.contacts || [];
   const accomplishments = candidate.accomplishments || [];

@@ -125,7 +125,8 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
             const newJob = await db.createJobOffer({
                 title: jobData.title,
                 description: jobData.description,
-                status: 'Open'
+                status: 'Open',
+                skills_required: jobData.skills_required || []
             });
 
             if (newJob) {
@@ -163,19 +164,58 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         try {
             console.log('[ATS Context] Adding candidate:', candidate);
 
-            // 1. Create Candidate
-            const newCandidate = await db.createCandidate({
-                full_name: candidate.name,
-                email: candidate.email,
-                phone: candidate.phone,
-                linkedin_url: candidate.linkedin_url,
-                location: candidate.location,
-                source: candidate.source || 'upload'
-            });
+            let candidateId: string;
+            let existingCandidate: Candidate | null = null;
 
-            if (!newCandidate) throw new Error('Failed to create candidate');
+            // Check if email exists
+            if (candidate.email) {
+                const { data: existing } = await db.supabase
+                    .from('candidates')
+                    .select('*')
+                    .eq('email', candidate.email)
+                    .single();
 
-            // 2. Create Resume
+                if (existing) {
+                    console.log('[ATS Context] Candidate matches existing email:', existing.id);
+                    existingCandidate = existing as Candidate;
+                    candidateId = existing.id;
+
+                    // Optional: Update existing candidate details if needed?
+                    // For now, let's just use the ID.
+                } else {
+                    // Create new
+                    const newCandidate = await db.createCandidate({
+                        full_name: candidate.name,
+                        email: candidate.email,
+                        phone: candidate.phone,
+                        linkedin_url: candidate.linkedin_url,
+                        location: candidate.location,
+                        source: candidate.source || 'upload'
+                    });
+                    if (!newCandidate) throw new Error('Failed to create candidate');
+                    candidateId = newCandidate.id;
+                }
+            } else {
+                // No email, create new (weak check)
+                const newCandidate = await db.createCandidate({
+                    full_name: candidate.name,
+                    email: candidate.email,
+                    phone: candidate.phone,
+                    linkedin_url: candidate.linkedin_url,
+                    location: candidate.location,
+                    source: candidate.source || 'upload'
+                });
+                if (!newCandidate) throw new Error('Failed to create candidate');
+                candidateId = newCandidate.id;
+            }
+
+
+            // 2. Create/Update Resume
+            // If candidate existed, they might already have a resume. 
+            // The user uploaded a NEW resume file, so we probably want to add it.
+            // But our schema seems to link Application -> Resume.
+
+            // Let's create a new resume entry for this specific upload
             const parsedData = {
                 name: candidate.name,
                 email: candidate.email,
@@ -195,20 +235,23 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
             };
 
             const newResume = await db.createResume({
-                candidate_id: newCandidate.id,
+                candidate_id: candidateId,
                 parsed_data: parsedData,
                 source: 'upload',
                 enriched: candidate.enriched || false
             });
 
             // 3. Create Application
-            // Find the first stage of the job
+            // Check if already applied to this job?
+            // For now, allow multiple applications or rely on DB constraints?
+            // Schema doesn't enforce unique (job_id, candidate_id).
+
             const stages = await db.getPipelineStages(candidate.jobOfferId);
-            const firstStage = stages[0]; // Usually 'Applied'
+            const firstStage = stages[0];
 
             await db.createApplication({
                 job_offer_id: candidate.jobOfferId,
-                candidate_id: newCandidate.id,
+                candidate_id: candidateId,
                 resume_id: newResume.id,
                 current_stage_id: firstStage?.id,
                 status: 'applied'
@@ -261,7 +304,8 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
             await db.updatePipelineStages(jobId, rounds.map(r => ({
                 name: r.name,
                 stage_order: r.order,
-                job_offer_id: jobId
+                job_offer_id: jobId,
+                id: r.id
             })));
             await loadData();
         } catch (error) {

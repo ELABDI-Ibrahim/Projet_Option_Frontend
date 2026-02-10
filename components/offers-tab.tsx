@@ -14,6 +14,7 @@ import { ResumeViewer } from './resume-viewer';
 import { RoundsEditor } from './rounds-editor';
 import { enrichCandidateFromResume } from '@/lib/api-service';
 import type { Candidate, JobOffer, Round } from '@/lib/types';
+import { useError } from '@/lib/error-context';
 
 interface OffersTabProps {
   jobOffers: JobOffer[];
@@ -44,6 +45,9 @@ export function OffersTab({
   const [enrichLoadingId, setEnrichLoadingId] = useState<string | null>(null);
   const [showFeatureDialog, setShowFeatureDialog] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+
+  const { showError } = useError();
+
 
   const selectedJob = jobOffers.find(j => j.id === selectedJobId);
   const jobCandidates = selectedJobId
@@ -76,7 +80,7 @@ export function OffersTab({
         linkedInUrl = await findLinkedInProfile(
           candidate.name,
           company,
-          candidate.location
+          candidate.location || undefined
         );
 
         console.log('[v0] [ENRICH] Candidate:', candidate.name, 'Final LinkedIn URL:', linkedInUrl);
@@ -112,6 +116,8 @@ export function OffersTab({
       }
     } catch (error) {
       console.log('[v0] [ENRICH] ERROR:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      showError(msg, 'Enrichment Failed');
     } finally {
       setEnrichLoadingId(null);
     }
@@ -145,7 +151,7 @@ export function OffersTab({
       const newCandidate: Candidate = {
         id: `uploaded-${Date.now()}`,
         jobOfferId: selectedJobId || undefined,
-        source: 'cvtheque',
+        source: 'cvtheque', // Default source for now, effectively "Uploaded"
         score: 0,
         currentRound: 0,
         status: 'Pending',
@@ -155,8 +161,24 @@ export function OffersTab({
         about: resume.about || `Resume uploaded: ${file.name}`,
         linkedin_url: linkedInUrl || resume.linkedin_url || '',
         open_to_work: resume.open_to_work ?? true,
-        experiences: resume.experiences || [],
-        educations: resume.educations || [],
+        experiences: resume.experiences.map(exp => ({
+          ...exp,
+          linkedin_url: exp.linkedin_url || null,
+          from_date: exp.from_date || '', // Ensure string for types
+          to_date: exp.to_date || '',   // Ensure string for types
+          duration: exp.duration || '',
+          location: exp.location || '',
+          description: exp.description || ''
+        })) || [],
+        educations: resume.educations.map(edu => ({
+          ...edu,
+          linkedin_url: edu.linkedin_url || null,
+          from_date: edu.from_date || '',
+          to_date: edu.to_date || '',
+          duration: edu.duration || '',
+          location: edu.location || '',
+          description: edu.description || ''
+        })) || [],
         skills: resume.skills || [],
         projects: resume.projects || [],
         contacts: resume.contacts || [],
@@ -167,27 +189,9 @@ export function OffersTab({
 
       onAddCandidate(newCandidate);
     } catch (error) {
-      console.log('[v0] Error parsing resume:', error);
-
-      // Fallback: create candidate with basic file name extraction
-      const basicCandidate: Candidate = {
-        id: `uploaded-${Date.now()}`,
-        jobOfferId: selectedJobId || undefined,
-        source: 'Local',
-        score: 0,
-        currentRound: 0,
-        status: 'Pending',
-        name: file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
-        location: 'Not specified',
-        about: 'Resume uploaded (parsing pending)',
-        linkedin_url: '',
-        open_to_work: true,
-        experiences: [],
-        educations: [],
-        enriched: false
-      };
-
-      onAddCandidate(basicCandidate);
+      console.error('[v0] Error parsing resume:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      showError(msg, 'Upload Failed');
     } finally {
       setUploadingResume(false);
       e.target.value = '';

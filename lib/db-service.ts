@@ -80,35 +80,103 @@ export async function getPipelineStages(jobOfferId: string) {
   return data as PipelineStage[];
 }
 
-export async function updatePipelineStages(jobOfferId: string, stages: Array<{ name: string; stage_order: number }>) {
+export async function updatePipelineStages(jobOfferId: string, stages: Array<{ name: string; stage_order: number, id?: string }>) {
   console.log('[DB] Updating pipeline stages for job:', jobOfferId);
-  console.log('[DB] New stages:', JSON.stringify(stages, null, 2));
 
-  // Delete existing stages
-  console.log('[DB] Deleting existing stages...');
-  const { error: deleteError } = await supabase
+  // 1. Get existing stages to identify what to delete
+  const { data: existingStages, error: fetchError } = await supabase
     .from('pipeline_stages')
-    .delete()
+    .select('id')
     .eq('job_offer_id', jobOfferId);
 
-  if (deleteError) {
-    console.error('[DB] ❌ Error deleting existing stages:', deleteError);
-    throw deleteError;
+  if (fetchError) throw fetchError;
+
+  // Identify stages to keep and delete
+  const keptIds = stages
+    .filter(s => s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id))
+    .map(s => s.id);
+
+  const stagesToDelete = existingStages?.filter(s => !keptIds.includes(s.id)).map(s => s.id) || [];
+
+  // 2. Delete removed stages
+  if (stagesToDelete.length > 0) {
+    console.log('[DB] Deleting removed stages:', stagesToDelete);
+    const { error: deleteError } = await supabase
+      .from('pipeline_stages')
+      .delete()
+      .in('id', stagesToDelete);
+
+    if (deleteError) {
+      console.error('[DB] ❌ Error deleting stages:', deleteError);
+      if (deleteError.code === '23503') { // FK violation
+        throw new Error(`Cannot delete a stage that has candidates in it. Please move candidates first.`);
+      }
+      throw deleteError;
+    }
   }
-  console.log('[DB] ✓ Existing stages deleted');
 
-  // Insert new stages
-  console.log('[DB] Inserting new stages...');
-  const { error } = await supabase
-    .from('pipeline_stages')
-    .insert(stages.map(s => ({ ...s, job_offer_id: jobOfferId })));
+  // Identifiy existing stages to update
+  const existingStagesUpdates = stages.filter(s => s.id && keptIds.includes(s.id));
 
-  if (error) {
-    console.error('[DB] ❌ Error inserting new stages:', error);
-    throw error;
+  // 3. Update existing stages to TEMP order (negative) to avoid unique constraint collisions
+  // Constraint: `uq_pipeline_stage_order_per_job` on (job_offer_id, stage_order)
+  if (existingStagesUpdates.length > 0) {
+    // 3a. Temp update: set order to negative values
+    const tempUpdates = existingStagesUpdates.map((s, index) => ({
+      id: s.id,
+      name: s.name,
+      stage_order: -1000 - index, // Temp negative order
+      job_offer_id: jobOfferId
+    }));
+
+    const { error: tempError } = await supabase
+      .from('pipeline_stages')
+      .upsert(tempUpdates);
+
+    if (tempError) {
+      console.error('[DB] ❌ Error setting temp stages:', tempError);
+      throw tempError;
+    }
+
+    // 3b. Final update: set order to correct positive values
+    const finalUpdates = existingStagesUpdates.map(s => ({
+      id: s.id,
+      name: s.name,
+      stage_order: s.stage_order,
+      job_offer_id: jobOfferId
+    }));
+
+    const { error: finalError } = await supabase
+      .from('pipeline_stages')
+      .upsert(finalUpdates);
+
+    if (finalError) {
+      console.error('[DB] ❌ Error setting final stages:', finalError);
+      throw finalError;
+    }
   }
 
-  console.log('[DB] ✓ Pipeline stages updated successfully');
+  // 4. Insert new stages
+  const newStages = stages.filter(s => !s.id || !keptIds.includes(s.id));
+
+  if (newStages.length > 0) {
+    const insertPayload = newStages.map(s => ({
+      name: s.name,
+      stage_order: s.stage_order,
+      job_offer_id: jobOfferId
+    }));
+
+    const { error: insertError } = await supabase
+      .from('pipeline_stages')
+      .insert(insertPayload);
+
+    if (insertError) {
+      console.error('[DB] ❌ Error inserting new stages:', insertError);
+      throw insertError;
+    }
+  }
+
+  console.log('[DB] ✓ Pipeline stages updated successfully (reordering handled)');
 }
 
 // Candidates
