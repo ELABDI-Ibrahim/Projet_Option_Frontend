@@ -60,7 +60,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                         title: job.title,
                         description: job.description || '',
                         status: job.status as 'Open' | 'Closed',
-                        skills_required: allSkills,
+                        skills_required: (job.skills && job.skills.length > 0) ? job.skills : allSkills,
                         rounds: stages.map(s => ({ id: s.id, name: s.name, order: s.stage_order })),
                         candidateCount: jobApps.length
                     };
@@ -103,7 +103,8 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                     interests: parsedData.interests || [],
 
                     enriched: resume?.enriched || false,
-                    linkedinData: parsedData.linkedinData
+                    linkedinData: parsedData.linkedinData,
+                    file_url: resume?.file_url // Map file URL from resume
                 };
             });
 
@@ -126,7 +127,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                 title: jobData.title,
                 description: jobData.description,
                 status: 'Open',
-                skills_required: jobData.skills_required || []
+                skills: jobData.skills_required
             });
 
             if (newJob) {
@@ -164,9 +165,52 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         try {
             console.log('[ATS Context] Adding candidate:', candidate);
 
+            // 0. Handle File Upload if present
+            let fileUrl = '';
+            const BUCKET_NAME = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'Resumes_lake';
+
+            if (candidate.file) {
+                const file = candidate.file as File;
+                console.log('[ATS Context] Processing file upload:', file.name, 'Size:', file.size);
+
+                // Validation: Max 5MB
+                if (file.size > 5 * 1024 * 1024) {
+                    throw new Error(`File ${file.name} is too large. Maximum size is 5MB. Please upload a lighter version (PDF, JPG, PNG).`);
+                }
+
+                // Upload to Supabase Storage
+                // Path: resumes/{timestamp}-{sanitized_filename}
+                const timestamp = Date.now();
+                const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const filePath = `resumes/${timestamp}-${sanitizedName}`;
+
+                console.log('[ATS Context] Uploading to bucket:', BUCKET_NAME, 'Path:', filePath);
+
+                const { data: uploadData, error: uploadError } = await db.supabase.storage
+                    .from(BUCKET_NAME)
+                    .upload(filePath, file, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+
+                if (uploadError) {
+                    console.error('[ATS Context] Storage upload error:', uploadError);
+                    throw new Error(`Failed to upload resume file: ${uploadError.message}`);
+                }
+
+                // Get Public URL
+                const { data: { publicUrl } } = db.supabase.storage
+                    .from(BUCKET_NAME)
+                    .getPublicUrl(filePath);
+
+                fileUrl = publicUrl;
+                console.log('[ATS Context] File uploaded successfully. Public URL:', fileUrl);
+            }
+
             let candidateId: string;
             let existingCandidate: Candidate | null = null;
 
+            // ... existing candidate creation logic ...
             // Check if email exists
             if (candidate.email) {
                 const { data: existing } = await db.supabase
@@ -179,11 +223,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                     console.log('[ATS Context] Candidate matches existing email:', existing.id);
                     existingCandidate = existing as Candidate;
                     candidateId = existing.id;
-
-                    // Optional: Update existing candidate details if needed?
-                    // For now, let's just use the ID.
                 } else {
-                    // Create new
                     const newCandidate = await db.createCandidate({
                         full_name: candidate.name,
                         email: candidate.email,
@@ -196,7 +236,6 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                     candidateId = newCandidate.id;
                 }
             } else {
-                // No email, create new (weak check)
                 const newCandidate = await db.createCandidate({
                     full_name: candidate.name,
                     email: candidate.email,
@@ -211,11 +250,6 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
 
 
             // 2. Create/Update Resume
-            // If candidate existed, they might already have a resume. 
-            // The user uploaded a NEW resume file, so we probably want to add it.
-            // But our schema seems to link Application -> Resume.
-
-            // Let's create a new resume entry for this specific upload
             const parsedData = {
                 name: candidate.name,
                 email: candidate.email,
@@ -238,14 +272,13 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                 candidate_id: candidateId,
                 parsed_data: parsedData,
                 source: 'upload',
-                enriched: candidate.enriched || false
+                enriched: candidate.enriched || false,
+                file_url: fileUrl || undefined // Save the file URL
             });
+            console.log('[ATS Context] Resume created with ID:', newResume.id, 'File URL:', fileUrl);
+
 
             // 3. Create Application
-            // Check if already applied to this job?
-            // For now, allow multiple applications or rely on DB constraints?
-            // Schema doesn't enforce unique (job_id, candidate_id).
-
             const stages = await db.getPipelineStages(candidate.jobOfferId);
             const firstStage = stages[0];
 

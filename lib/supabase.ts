@@ -28,6 +28,7 @@ export interface JobOffer {
   status: 'Open' | 'Closed' | 'Draft';
   created_at: string;
   deleted_at?: string;
+  skills?: string[];
 }
 
 export interface Candidate {

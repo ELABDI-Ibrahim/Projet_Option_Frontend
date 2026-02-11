@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Zap, Plus, Upload, Search, Lock, Unlock, Linkedin } from "lucide-react";
+import { Zap, Plus, Upload, Search, Lock, Unlock, Linkedin, Download } from "lucide-react";
 import { ResumeViewer } from './resume-viewer';
 import { RoundsEditor } from './rounds-editor';
 import { enrichCandidateFromResume } from '@/lib/api-service';
@@ -75,7 +75,7 @@ export function OffersTab({
         const { findLinkedInProfile } = await import('@/lib/api-service');
 
         // Get company from first experience
-        const company = candidate.experiences?.[0]?.institution_name;
+        const company = candidate.experiences?.[0]?.institution_name || '';
 
         linkedInUrl = await findLinkedInProfile(
           candidate.name,
@@ -184,7 +184,8 @@ export function OffersTab({
         contacts: resume.contacts || [],
         accomplishments: resume.accomplishments || [],
         interests: resume.interests || [],
-        enriched: false
+        enriched: false,
+        file: file // Pass the file object for upload
       };
 
       onAddCandidate(newCandidate);
@@ -369,6 +370,20 @@ export function OffersTab({
                           >
                             View
                           </Button>
+
+                          {candidate.file_url && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => window.open(candidate.file_url, '_blank')}
+                              className="h-7 text-xs text-slate-600 hover:text-slate-700 hover:bg-slate-50 gap-1"
+                              title="Download Resume"
+                            >
+                              <Download className="w-3 h-3" />
+                              Download
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
                             variant="ghost"

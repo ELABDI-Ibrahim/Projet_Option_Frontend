@@ -56,6 +56,8 @@ export interface Candidate {
   interests: string[];
   enriched: boolean;
   linkedinData?: any;
+  file?: File;
+  file_url?: string;
 }
 
 export interface Round {
