@@ -3,39 +3,49 @@
  * All data is now stored in Supabase - no mock data
  */
 
+// Import DB types to ensure consistency (optional, but good practice if we want to extend them)
+// For now, we will redefine or map them as needed for the UI.
+
 export interface Candidate {
   id: string;
-  jobOfferId?: string;
+  // Relationship fields for UI convenience
+  jobOfferId?: string; // Derived from application
+  currentStageId?: string; // Derived from application
+
+  // Core fields from Candidate/Resume
   source: "LinkedIn" | "Local" | "CVthèque" | "linkedin" | "upload" | "cvtheque";
-  score: number;
-  status: "Pending" | "Next Round" | "Declined";
-  currentRound: number;
-  currentStageId?: string;
-  name: string;
-  email?: string;
-  location: string;
-  about: string | null;
-  linkedin_url: string;
-  open_to_work: boolean;
+  score: number; // Derived from latest AI score
+  status: "Pending" | "Next Round" | "Declined" | "applied" | "shortlisted" | "next_round" | "declined" | "hired"; // Application status
+  currentRound: number; // Derived order
+
+  name: string; // from candidates.full_name
+  email?: string | null;
+  phone?: string | null;
+  location: string | null;
+  about: string | null; // from resume.parsed_data
+  linkedin_url: string | null;
+  open_to_work: boolean; // from resume.parsed_data
+
+  // Parsed Resume Data
   experiences: Array<{
     position_title: string;
     institution_name: string;
     from_date: string;
     to_date: string;
-    duration: string;
-    location: string;
-    description: string;
-    linkedin_url?: string | null; // Added nullable for strict compatibility
+    duration: string | null;
+    location: string | null;
+    description: string | null;
+    linkedin_url?: string | null;
   }>;
   educations: Array<{
     institution_name: string;
     degree: string;
     from_date: string;
     to_date: string;
-    duration?: string;
-    location: string;
-    description?: string;
-    linkedin_url?: string | null; // Added nullable for strict compatibility
+    duration?: string | null;
+    location: string | null;
+    description?: string | null;
+    linkedin_url?: string | null;
   }>;
   skills: Array<{
     category: string;
@@ -54,10 +64,16 @@ export interface Candidate {
   contacts: string[];
   accomplishments: string[];
   interests: string[];
+
+  // Metadata
   enriched: boolean;
-  linkedinData?: any;
-  file?: File;
+  linkedinData?: any; // To store raw or merged linkedin data if needed separately
+  file?: File; // For upload flow
   file_url?: string;
+
+  // New API/DB Linkage
+  applicationId?: string;
+  resumeId?: string;
 }
 
 export interface Round {
@@ -70,7 +86,7 @@ export interface JobOffer {
   id: string;
   title: string;
   description: string;
-  status: 'Open' | 'Closed';
+  status: 'Open' | 'Closed' | 'Draft';
   skills_required: string[];
   rounds: Round[];
   candidateCount?: number;

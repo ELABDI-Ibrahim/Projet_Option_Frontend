@@ -59,7 +59,6 @@ export function OffersTab({
     try {
       const candidate = candidates.find(c => c.id === candidateId);
       console.log('[v0] [ENRICH] Starting enrichment for candidate:', candidateId);
-      console.log('[v0] [ENRICH] Candidate:', candidate?.name, 'LinkedIn URL:', candidate?.linkedin_url);
 
       if (!candidate) {
         console.log('[v0] [ENRICH] ERROR: Candidate not found');
@@ -67,53 +66,33 @@ export function OffersTab({
         return;
       }
 
-      let linkedInUrl = candidate.linkedin_url;
+      // Construct ResumeParseData from candidate fields
+      const resumeData: any = {
+        name: candidate.name,
+        email: candidate.email,
+        phone: candidate.phone, // Assuming phone exists on candidate
+        location: candidate.location,
+        about: candidate.about,
+        linkedin_url: candidate.linkedin_url,
+        experiences: candidate.experiences,
+        educations: candidate.educations,
+        skills: candidate.skills,
+        projects: candidate.projects,
+        contacts: candidate.contacts,
+        accomplishments: candidate.accomplishments,
+        interests: candidate.interests,
+        open_to_work: candidate.open_to_work
+      };
 
-      // If no LinkedIn URL, try to discover it
-      if (!linkedInUrl) {
-        console.log('[v0] [ENRICH] No LinkedIn URL, attempting discovery...');
-        const { findLinkedInProfile } = await import('@/lib/api-service');
+      console.log('[v0] [ENRICH] Calling enrichResume API...');
+      const { enrichResume } = await import('@/lib/api-service');
+      const newResumeData = await enrichResume(resumeData, candidate.linkedin_url || undefined, candidate.name);
 
-        // Get company from first experience
-        const company = candidate.experiences?.[0]?.institution_name || '';
+      console.log('[v0] [ENRICH] SUCCESS: New resume data received');
 
-        linkedInUrl = await findLinkedInProfile(
-          candidate.name,
-          company,
-          candidate.location || undefined
-        );
+      // Call handler to update candidate with NEW resume data (Full Replacement)
+      onEnrichWithLinkedIn?.(candidateId, newResumeData);
 
-        console.log('[v0] [ENRICH] Candidate:', candidate.name, 'Final LinkedIn URL:', linkedInUrl);
-
-        if (!linkedInUrl) {
-          console.log('[v0] [ENRICH] ERROR: Could not find LinkedIn URL for candidate:', candidate.name);
-          setEnrichLoadingId(null);
-          return;
-        }
-
-        // Save discovered LinkedIn URL to database
-        console.log('[v0] [ENRICH] Saving discovered LinkedIn URL to database');
-        await onUpdateCandidateLinkedIn?.(candidateId, linkedInUrl);
-
-        // Update local candidate object for immediate use
-        candidate.linkedin_url = linkedInUrl;
-      }
-
-      console.log('[v0] [ENRICH] Starting LinkedIn scrape for URL:', linkedInUrl);
-
-      // Scrape LinkedIn profile data using the URL
-      const { scrapeLinkedInProfile } = await import('@/lib/api-service');
-      const linkedInData = await scrapeLinkedInProfile(linkedInUrl, candidate.name);
-
-      console.log('[v0] [ENRICH] Scrape result:', linkedInData);
-
-      if (linkedInData) {
-        console.log('[v0] [ENRICH] SUCCESS: LinkedIn data received, updating candidate');
-        // Call handler to update candidate with LinkedIn data in parent
-        onEnrichWithLinkedIn?.(candidateId, linkedInData);
-      } else {
-        console.log('[v0] [ENRICH] WARNING: No data returned from LinkedIn scrape');
-      }
     } catch (error) {
       console.log('[v0] [ENRICH] ERROR:', error);
       const msg = error instanceof Error ? error.message : String(error);
@@ -196,6 +175,24 @@ export function OffersTab({
     } finally {
       setUploadingResume(false);
       e.target.value = '';
+    }
+  };
+
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'resume';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download failed:', error);
+      window.open(url, '_blank');
     }
   };
 
@@ -312,7 +309,7 @@ export function OffersTab({
               <input
                 id={`resume-upload-${selectedJobId}`}
                 type="file"
-                accept=".pdf,.doc,.docx,.txt,.json"
+                accept=".pdf,.doc,.docx,.txt,.json,.jpg,.jpeg,.png"
                 onChange={handleResumeUpload}
                 className="hidden"
               />
@@ -375,7 +372,7 @@ export function OffersTab({
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => window.open(candidate.file_url, '_blank')}
+                              onClick={() => handleDownload(candidate.file_url!, `resume-${candidate.name.replace(/\s+/g, '_')}`)}
                               className="h-7 text-xs text-slate-600 hover:text-slate-700 hover:bg-slate-50 gap-1"
                               title="Download Resume"
                             >
@@ -388,12 +385,12 @@ export function OffersTab({
                             size="sm"
                             variant="ghost"
                             onClick={() => handleEnrich(candidate.id)}
-                            disabled={enrichLoadingId === candidate.id || candidate.enriched}
+                            disabled={enrichLoadingId === candidate.id}
                             className={`h-7 text-xs gap-1 ${candidate.enriched
                               ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
                               : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
                               } disabled:text-slate-400`}
-                            title={candidate.enriched ? 'Profile enriched from LinkedIn' : 'Enrich profile from LinkedIn'}
+                            title={candidate.enriched ? 'Profile enriched from LinkedIn (Click to re-enrich)' : 'Enrich profile from LinkedIn'}
                           >
                             <Linkedin className="w-3 h-3" />
                             {enrichLoadingId === candidate.id ? 'Enriching...' : candidate.enriched ? 'Enriched' : 'Enrich'}

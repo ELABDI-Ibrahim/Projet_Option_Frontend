@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { JobOffer, Candidate, Application, PipelineStage, Resume, ApplicationScore } from './supabase';
+import { ResumeParseData } from './api-service';
 
 export { supabase } from './supabase';
 
@@ -19,7 +20,6 @@ export async function getJobOffers() {
   }
 
   console.log('[DB] ✓ Fetched job offers:', data.length);
-  // console.log('[DB] Job offers data:', JSON.stringify(data, null, 2));
   return data as JobOffer[];
 }
 
@@ -76,7 +76,6 @@ export async function getPipelineStages(jobOfferId: string) {
   }
 
   console.log('[DB] ✓ Fetched pipeline stages:', data.length);
-  // console.log('[DB] Pipeline stages:', JSON.stringify(data, null, 2));
   return data as PipelineStage[];
 }
 
@@ -108,7 +107,8 @@ export async function updatePipelineStages(jobOfferId: string, stages: Array<{ n
 
     if (deleteError) {
       console.error('[DB] ❌ Error deleting stages:', deleteError);
-      if (deleteError.code === '23503') { // FK violation
+      // Check for FK violation (e.g. applications in this stage)
+      if (deleteError.code === '23503') {
         throw new Error(`Cannot delete a stage that has candidates in it. Please move candidates first.`);
       }
       throw deleteError;
@@ -119,7 +119,6 @@ export async function updatePipelineStages(jobOfferId: string, stages: Array<{ n
   const existingStagesUpdates = stages.filter(s => s.id && keptIds.includes(s.id));
 
   // 3. Update existing stages to TEMP order (negative) to avoid unique constraint collisions
-  // Constraint: `uq_pipeline_stage_order_per_job` on (job_offer_id, stage_order)
   if (existingStagesUpdates.length > 0) {
     // 3a. Temp update: set order to negative values
     const tempUpdates = existingStagesUpdates.map((s, index) => ({
@@ -180,22 +179,34 @@ export async function updatePipelineStages(jobOfferId: string, stages: Array<{ n
 }
 
 // Candidates
+// NOTE: "getCandidates" is ambiguous in new schema because candidates are shared.
+// Usually we want "Applications" (candidate + context of a specific job apply).
+// But for legacy support or "Talent Pool" views, we might fetch candidates directly.
 export async function getCandidates(jobOfferId?: string) {
   console.log('[DB] Fetching candidates...');
+
   if (jobOfferId) {
-    console.log('[DB] Filtering by job offer:', jobOfferId);
+    // If jobOfferId is provided, we should probably be looking at APPLICATIONS
+    console.log('[DB] Filtering by job offer via applications...');
+    const apps = await getApplications(jobOfferId);
+    return apps.map(app => ({
+      ...app.candidate,
+      // Merge application context into candidate for UI compatibility
+      status: app.status,
+      currentStageId: app.current_stage_id,
+      jobOfferId: app.job_offer_id,
+      applicationId: app.id,
+      resumeId: app.resume_id,
+      score: 0 // Default or fetch from scores table
+    }));
   }
 
-  let query = supabase
+  // Otherwise, fetch pure candidates (Talent Pool view)
+  const { data, error } = await supabase
     .from('candidates')
     .select('*')
-    .is('deleted_at', null);
-
-  if (jobOfferId) {
-    query = query.eq('job_offers.id', jobOfferId);
-  }
-
-  const { data, error } = await query.order('created_at', { ascending: false });
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
 
   if (error) {
     console.error('[DB] ❌ Error fetching candidates:', error);
@@ -208,34 +219,19 @@ export async function getCandidates(jobOfferId?: string) {
 
 export async function createCandidate(candidate: Omit<Candidate, 'id' | 'created_at' | 'deleted_at'>) {
   console.log('[DB] Creating new candidate...');
-  console.log('[DB] Candidate data:', JSON.stringify(candidate, null, 2));
-
-  // Normalize source to match check constraint
-  let normalizedSource = 'upload';
-  if (candidate.source) {
-    const s = candidate.source.toLowerCase();
-    if (s === 'linkedin') normalizedSource = 'linkedin';
-    else if (s === 'cvtheque' || s === 'cvthèque') normalizedSource = 'cvtheque';
-    else if (s === 'upload') normalizedSource = 'upload';
-    // Any other value (like 'local') defaults to 'upload'
-  }
-
-  console.log('[DB] Candidate source (original):', candidate.source);
-  console.log('[DB] Candidate source (normalized):', normalizedSource);
+  // Note: This creates a raw candidate. Usually we use the upload flow which creates everything.
 
   const { data, error } = await supabase
     .from('candidates')
-    .insert([{ ...candidate, source: normalizedSource }])
+    .insert([candidate])
     .select();
 
   if (error) {
     console.error('[DB] ❌ Error creating candidate:', error);
-    console.error('[DB] Error details:', JSON.stringify(error, null, 2));
     throw error;
   }
 
   console.log('[DB] ✓ Candidate created successfully');
-  console.log('[DB] Created candidate:', JSON.stringify(data?.[0], null, 2));
   return data?.[0] as Candidate;
 }
 
@@ -265,7 +261,6 @@ export async function createResume(resume: Omit<Resume, 'id' | 'created_at' | 'd
   console.log('[DB] Resume source:', resume.source);
   console.log('[DB] Resume enriched:', resume.enriched);
   console.log('[DB] Resume parsed_data keys:', Object.keys(resume.parsed_data || {}));
-  // console.log('[DB] Full parsed_data:', JSON.stringify(resume.parsed_data, null, 2));
 
   // Normalize source to match check constraint
   const normalizedSource = resume.source ?
@@ -322,18 +317,19 @@ export async function getResume(resumeId: string) {
   }
 
   console.log('[DB] ✓ Fetched resume');
-  // console.log('[DB] Resume data:', JSON.stringify(data, null, 2));
   return data as Resume;
 }
 
-export async function updateResumeData(resumeId: string, parsedData: any) {
+export async function updateResumeData(resumeId: string, parsedData: ResumeParseData) {
   console.log('[DB] Updating resume data...');
   console.log('[DB] Resume ID:', resumeId);
-  console.log('[DB] New parsed_data:', JSON.stringify(parsedData, null, 2));
 
   const { error } = await supabase
     .from('resumes')
-    .update({ parsed_data: parsedData })
+    .update({
+      parsed_data: parsedData,
+      enriched: true // Assume update means enriched or corrected
+    })
     .eq('id', resumeId);
 
   if (error) {
@@ -344,6 +340,23 @@ export async function updateResumeData(resumeId: string, parsedData: any) {
   console.log('[DB] ✓ Resume data updated successfully');
 }
 
+export async function getAllResumes() {
+  console.log('[DB] Fetching ALL resumes (Lake view)...');
+
+  const { data, error } = await supabase
+    .from('resumes')
+    .select('*, candidate:candidates(id, full_name, email, location, linkedin_url)')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[DB] ❌ Error fetching all resumes:', error);
+    throw error;
+  }
+
+  console.log('[DB] ✓ Fetched all resumes:', data.length);
+  return data as (Resume & { candidate?: Candidate })[];
+}
+
 // Applications
 export async function getApplications(jobOfferId?: string) {
   console.log('[DB] Fetching applications...');
@@ -351,9 +364,15 @@ export async function getApplications(jobOfferId?: string) {
     console.log('[DB] Filtering by job offer:', jobOfferId);
   }
 
+  // Join logic is slightly different now
   let query = supabase
     .from('applications')
-    .select('*, candidate:candidates(*), resume:resumes(*), stage:pipeline_stages(*)')
+    .select(`
+      *,
+      candidate:candidates(*),
+      resume:resumes(*),
+      stage:pipeline_stages(*)
+    `)
     .is('deleted_at', null);
 
   if (jobOfferId) {
@@ -364,47 +383,16 @@ export async function getApplications(jobOfferId?: string) {
 
   if (error) {
     console.error('[DB] ❌ Error fetching applications:', error);
-    console.error('[DB] Error details:', JSON.stringify(error, null, 2));
     throw error;
   }
 
   console.log('[DB] ✓ Fetched applications:', data.length);
-
-  // Fallback: If any application is missing a resume, try to find it by candidate_id
-  const appsWithMissingResumes = data.filter(app => !app.resume);
-  if (appsWithMissingResumes.length > 0) {
-    console.log(`[DB] Found ${appsWithMissingResumes.length} applications with missing resumes. Attempting fallback lookup...`);
-
-    // Get all candidate IDs that need resumes
-    const candidateIds = appsWithMissingResumes.map(app => app.candidate_id);
-
-    // Fetch resumes for these candidates
-    const { data: resumes, error: resumeError } = await supabase
-      .from('resumes')
-      .select('*')
-      .in('candidate_id', candidateIds);
-
-    if (!resumeError && resumes) {
-      console.log(`[DB] Found ${resumes.length} fallback resumes.`);
-      // Map resumes back to applications
-      data.forEach(app => {
-        if (!app.resume) {
-          const matchingResume = resumes.find(r => r.candidate_id === app.candidate_id);
-          if (matchingResume) {
-            console.log(`[DB] Restored missing resume for candidate ${app.candidate_id}`);
-            (app as any).resume = matchingResume;
-          }
-        }
-      });
-    }
-  }
 
   return data as (Application & { candidate: Candidate; resume?: Resume; stage?: PipelineStage })[];
 }
 
 export async function createApplication(application: Omit<Application, 'id' | 'applied_at' | 'updated_at' | 'deleted_at'>) {
   console.log('[DB] Creating new application...');
-  console.log('[DB] Application data:', JSON.stringify(application, null, 2));
 
   const { data, error } = await supabase
     .from('applications')
@@ -413,12 +401,10 @@ export async function createApplication(application: Omit<Application, 'id' | 'a
 
   if (error) {
     console.error('[DB] ❌ Error creating application:', error);
-    console.error('[DB] Error details:', JSON.stringify(error, null, 2));
     throw error;
   }
 
   console.log('[DB] ✓ Application created successfully');
-  console.log('[DB] Created application:', JSON.stringify(data?.[0], null, 2));
   return data?.[0] as Application;
 }
 
@@ -455,26 +441,12 @@ export async function updateApplicationStage(applicationId: string, stageId: str
     throw error;
   }
 
-  // Verification
-  const { data: verifyData } = await supabase
-    .from('applications')
-    .select('current_stage_id')
-    .eq('id', applicationId)
-    .single();
-
-  if (verifyData?.current_stage_id !== stageId) {
-    console.error('[DB] ❌ Verification FAILED. Stage ID mismatch!', { expected: stageId, actual: verifyData?.current_stage_id });
-  } else {
-    console.log('[DB] ✓ Verification passed: Stage updated.');
-  }
-
   console.log('[DB] ✓ Application stage updated successfully');
 }
 
 // Application Scores
 export async function createApplicationScore(score: Omit<ApplicationScore, 'id' | 'generated_at'>) {
   console.log('[DB] Creating application score...');
-  console.log('[DB] Score data:', JSON.stringify(score, null, 2));
 
   const { data, error } = await supabase
     .from('application_scores')

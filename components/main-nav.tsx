@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Briefcase, ListTodo, TrendingUp, Settings } from "lucide-react";
+import { Briefcase, ListTodo, TrendingUp, Settings, Database } from "lucide-react";
 import { useATS } from '@/lib/ats-context';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,7 @@ export function MainNav() {
 
     const links = [
         { href: '/offers', label: 'Offers', icon: Briefcase, color: 'blue' },
+        { href: '/lake', label: 'Lake', icon: Database, color: 'cyan' },
         { href: '/board', label: 'Job Board', icon: ListTodo, color: 'green' },
         { href: '/pipeline', label: 'Pipeline', icon: TrendingUp, color: 'purple' },
         { href: '/analytics', label: 'Analytics', icon: Settings, color: 'orange' },
@@ -23,6 +24,7 @@ export function MainNav() {
             switch (color) {
                 case 'blue': return `${base} bg-blue-600 text-white`;
                 case 'green': return `${base} bg-green-600 text-white`;
+                case 'cyan': return `${base} bg-cyan-600 text-white`;
                 case 'purple': return `${base} bg-purple-600 text-white`;
                 case 'orange': return `${base} bg-orange-600 text-white`;
                 default: return `${base} bg-slate-900 text-white`;

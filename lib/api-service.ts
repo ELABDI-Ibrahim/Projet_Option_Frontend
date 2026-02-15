@@ -46,6 +46,7 @@ export interface ResumeParseData {
   accomplishments: string[];
   contacts: string[];
   linkedinData?: LinkedInProfileData;
+  [key: string]: any; // Allow other fields
 }
 
 export interface LinkedInProfileData {
@@ -76,6 +77,18 @@ export interface LinkedInProfileData {
   interests?: string[];
 }
 
+export interface UploadResumeResponse {
+  success: boolean;
+  message: string;
+  data: {
+    candidate_id: string;
+    resume_id: string;
+    application_id: string | null;
+    file_url: string;
+    parsed_data: ResumeParseData;
+  };
+}
+
 /**
  * Check API health status
  */
@@ -85,19 +98,57 @@ export async function checkApiHealth(): Promise<boolean> {
     const data = await response.json();
     return data.status === 'healthy';
   } catch (error) {
-    console.log('[v0] API health check failed:', error);
+    console.log('[API] Health check failed:', error);
     return false;
   }
 }
 
 /**
- * Parse resume from file
- * Accepts PDF, DOC, DOCX, TXT formats
+ * Upload Resume (New Main Entry Point)
+ * Uploads a resume PDF, parses it, uploads to storage, and creates DB records.
+ */
+export async function uploadResume(
+  file: File,
+  jobOfferId?: string
+): Promise<UploadResumeResponse> {
+  try {
+    console.log('[API] Uploading resume...');
+    console.log('[API] File:', file.name, 'Size:', file.size);
+    if (jobOfferId) console.log('[API] Job Offer ID:', jobOfferId);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    if (jobOfferId) {
+      formData.append('job_offer_id', jobOfferId);
+    }
+
+    const response = await fetch(`${BASE_URL}/api/upload-resume`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[API] Upload error response:', errorText);
+      throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('[API] Upload success:', data);
+    return data as UploadResumeResponse;
+  } catch (error) {
+    console.error('[API] Upload error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Parse resume (Standalone)
+ * Used mostly for testing or if we need pure parsing without storage/DB
  */
 export async function parseResume(file: File): Promise<ResumeParseData | null> {
   try {
-    console.log('[v0] [PARSE] Starting resume parsing');
-    console.log('[v0] [PARSE] File name:', file.name, 'Size:', file.size);
+    console.log('[API] Parsing resume (standalone)...');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -107,109 +158,55 @@ export async function parseResume(file: File): Promise<ResumeParseData | null> {
       body: formData,
     });
 
-    console.log('[v0] [PARSE] Response status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.log('[v0] [PARSE] ERROR response:', errorText);
       throw new Error(errorText || `API error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('[v0] [PARSE] Response data:', JSON.stringify(data));
-
-    // Check if the response is wrapped in 'data' or returned directly
-    const parsedData = data.data || data;
-
-    console.log('[v0] [PARSE] Extracted data - Name:', parsedData?.name, 'LinkedIn URL:', parsedData?.linkedin_url);
-
-    return parsedData || null;
+    // Support both wrapped "data" and direct return
+    return data.data || data;
   } catch (error) {
-    console.error('[v0] [PARSE] ERROR:', error);
-    // Re-throw the error so it can be caught by the UI
+    console.error('[API] Parse error:', error);
     throw error;
   }
 }
 
 /**
- * Find LinkedIn profile URL using name, company, and location
+ * Enrich Resume
+ * Updates the resume with LinkedIn data. Now replaces the entire resume object.
  */
-export async function findLinkedInProfile(
-  name: string,
-  company?: string,
-  location?: string
-): Promise<string | null> {
+export async function enrichResume(
+  resumeData: ResumeParseData,
+  linkedinUrl?: string,
+  name?: string
+): Promise<ResumeParseData> {
   try {
+    console.log('[API] Enriching resume...');
+
     const payload = {
-      name,
-      ...(company && { company }),
-      ...(location && { location }),
+      resume_data: resumeData,
+      linkedin_url: linkedinUrl,
+      name: name
     };
 
-    console.log('[v0] Finding LinkedIn profile for:', payload);
-
-    const response = await fetch(`${BASE_URL}/api/find-linkedin`, {
+    const response = await fetch(`${BASE_URL}/api/enrich-resume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload)
     });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('[v0] Find LinkedIn Response:', JSON.stringify(data));
-    console.log('[v0] LinkedIn profile found:', data.data?.url);
-
-    return data.data?.url || null;
-  } catch (error) {
-    console.log('[v0] Error finding LinkedIn profile:', error);
-    return null;
-  }
-}
-
-/**
- * Scrape LinkedIn profile data from profile URL
- * Note: Requires session.json on the server
- */
-export async function scrapeLinkedInProfile(
-  profileUrl: string,
-  name?: string
-): Promise<LinkedInProfileData | null> {
-  try {
-    console.log('[v0] [SCRAPE] Starting LinkedIn scrape');
-    console.log('[v0] [SCRAPE] Profile URL:', profileUrl);
-    console.log('[v0] [SCRAPE] Name:', name);
-    console.log('[v0] [SCRAPE] API Endpoint:', `${BASE_URL}/api/scrape-linkedin`);
-
-    const payload: any = { profile_url: profileUrl };
-    if (name) {
-      payload.name = name;
-    }
-
-    const response = await fetch(`${BASE_URL}/api/scrape-linkedin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    console.log('[v0] [SCRAPE] Response status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.log('[v0] [SCRAPE] ERROR response:', errorText);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+      throw new Error(`Enrichment failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('[v0] [SCRAPE] Response data:', JSON.stringify(data));
-    console.log('[v0] [SCRAPE] Extracted LinkedIn data:', data.data);
-
-    return data.data || null;
+    console.log('[API] Enrichment success. New data received.');
+    return data.data || data; // Return the new, enriched resume structure
   } catch (error) {
-    console.log('[v0] [SCRAPE] ERROR:', error);
-    return null; // Return null on error, don't throw to avoid breaking the flow if enrichment fails
+    console.error('[API] Enrichment error:', error);
+    throw error;
   }
 }
 
@@ -240,7 +237,7 @@ export async function enrichCandidateFromResume(
 
     // Step 3: If no LinkedIn URL in resume, find it using name and company
     if (!linkedInUrl) {
-      console.log('[v0] No LinkedIn URL in resume, searching for profile...');
+      console.log('[API] No LinkedIn URL in resume, searching for profile...');
       linkedInUrl = await findLinkedInProfile(
         resumeData.name,
         company || resumeData.experiences?.[0]?.institution_name,
@@ -249,7 +246,7 @@ export async function enrichCandidateFromResume(
     }
 
     if (linkedInUrl) {
-      console.log('[v0] LinkedIn URL found:', linkedInUrl);
+      console.log('[API] LinkedIn URL found:', linkedInUrl);
       resumeData.linkedin_url = linkedInUrl;
     }
 
@@ -258,54 +255,71 @@ export async function enrichCandidateFromResume(
       linkedInUrl: linkedInUrl || null,
     };
   } catch (error) {
-    console.error('[v0] Error parsing resume:', error);
+    console.error('[API] Error parsing resume:', error);
     // Throw error to be caught by UI
     throw error;
   }
 }
 
 /**
- * Merge resume and LinkedIn data for comprehensive candidate profile
+ * Find LinkedIn Profile URL
  */
-export function mergeResumeAndLinkedIn(
-  resume: ResumeParseData,
-  linkedIn: LinkedInProfileData
-): ResumeParseData {
-  return {
-    linkedin_url: resume.linkedin_url,
-    name: linkedIn.name || resume.name,
-    location: linkedIn.location || resume.location,
-    about: linkedIn.about || resume.about,
-    open_to_work: resume.open_to_work,
-    experiences: (linkedIn.experiences || resume.experiences || []).map(exp => ({
-      position_title: exp.position_title,
-      institution_name: exp.institution_name,
-      linkedin_url: (exp as any).linkedin_url || null,
-      from_date: exp.from_date,
-      to_date: exp.to_date,
-      duration: exp.duration || null,
-      location: exp.location || null,
-      description: exp.description || null
-    })),
-    educations: (linkedIn.educations || resume.educations || []).map(edu => ({
-      degree: edu.degree,
-      institution_name: edu.institution_name,
-      linkedin_url: (edu as any).linkedin_url || null,
-      from_date: edu.from_date,
-      to_date: edu.to_date,
-      duration: (edu as any).duration || null,
-      location: edu.location || null,
-      description: edu.description || null
-    })),
-    skills: [
-      ...resume.skills,
-      ...(linkedIn.skills && linkedIn.skills.length > 0
-        ? [{ category: 'LinkedIn Skills', items: linkedIn.skills }]
-        : [])
-    ],
-    projects: resume.projects,
-    interests: [...new Set([...resume.interests, ...(linkedIn.interests || [])])],
-    accomplishments: [...new Set([...resume.accomplishments, ...(linkedIn.accomplishments || [])])],
-    contacts: [...new Set([...resume.contacts, ...(linkedIn.contacts || [])])],
-  };
+export async function findLinkedInProfile(
+  name: string,
+  company?: string,
+  location?: string
+): Promise<string | null> {
+  try {
+    const payload = {
+      name,
+      ...(company && { company }),
+      ...(location && { location }),
+    };
+
+    const response = await fetch(`${BASE_URL}/api/find-linkedin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+    const data = await response.json();
+    return data.data?.url || null;
+  } catch (error) {
+    console.log('[API] Error finding LinkedIn:', error);
+    return null;
+  }
+}
+
+/**
+ * Scrape LinkedIn Profile
+ */
+export async function scrapeLinkedInProfile(
+  profileUrl: string,
+  name?: string
+): Promise<LinkedInProfileData | null> {
+  try {
+    console.log('[API] Scraping LinkedIn...');
+
+    const payload: any = { profile_url: profileUrl };
+    if (name) payload.name = name;
+
+    const response = await fetch(`${BASE_URL}/api/scrape-linkedin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.data || null;
+  } catch (error) {
+    console.error('[API] Scrape error:', error);
+    return null;
+  }
 }

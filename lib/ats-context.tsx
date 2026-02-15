@@ -3,10 +3,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as db from './db-service';
 import { Candidate, JobOffer, Round } from './types';
+import { Resume } from './supabase';
 
 interface ATSContextType {
     candidates: Candidate[];
     jobOffers: JobOffer[];
+    resumes: (Resume & { candidate?: any })[];
     loading: boolean;
     refreshData: () => Promise<void>;
     addJobOffer: (jobData: Omit<JobOffer, 'id'>) => Promise<void>;
@@ -17,6 +19,7 @@ interface ATSContextType {
     updateJobRounds: (jobId: string, rounds: Round[]) => Promise<void>;
     scoreCandidates: (jobId: string) => Promise<void>;
     updateCandidateResume: (candidateId: string, updates: any) => Promise<void>;
+    updateCandidateLinkedIn: (candidateId: string, linkedInUrl: string) => Promise<void>;
 }
 
 const ATSContext = createContext<ATSContextType | undefined>(undefined);
@@ -24,15 +27,17 @@ const ATSContext = createContext<ATSContextType | undefined>(undefined);
 export function ATSProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [jobOffers, setJobOffers] = useState<JobOffer[]>([]);
+    const [resumes, setResumes] = useState<(Resume & { candidate?: any })[]>([]);
     const [loading, setLoading] = useState(true);
 
     const loadData = useCallback(async () => {
         try {
             setLoading(true);
-            const [jobsData, candidatesData, applicationsData] = await Promise.all([
+            const [jobsData, candidatesData, applicationsData, resumesData] = await Promise.all([
                 db.getJobOffers(),
                 db.getCandidates(),
-                db.getApplications()
+                db.getApplications(),
+                db.getAllResumes()
             ]);
 
             // Transform job offers with their stages and skills
@@ -84,7 +89,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                     status: (app.status === 'shortlisted' ? 'Next Round' :
                         app.status === 'declined' ? 'Declined' : 'Pending') as any,
                     currentRound: 0, // Visual mostly
-                    currentStageId: app.current_stage_id,
+                    currentStageId: app.current_stage_id || undefined,
 
                     // Resume Data
                     name: candidate.full_name,
@@ -110,6 +115,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
 
             setJobOffers(transformedJobs);
             setCandidates(transformedCandidates);
+            setResumes(resumesData);
         } catch (error) {
             console.error('[ATS Context] Error loading data:', error);
         } finally {
@@ -351,7 +357,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         console.log('[ATS Context] Scoring candidates for job:', jobId);
     };
 
-    const updateCandidateResume = async (candidateId: string, linkedInData: any) => {
+    const updateCandidateResume = async (candidateId: string, newResumeData: any) => {
         try {
             const candidate = candidates.find(c => c.id === candidateId);
             if (!candidate || !(candidate as any).resume_id) {
@@ -359,20 +365,12 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
-            console.log('[ATS Context] Enriching resume with LinkedIn data:', linkedInData);
+            console.log('[ATS Context] Enriching resume with new data (Full Replacement)');
+            // console.log('[ATS Context] New Data:', JSON.stringify(newResumeData, null, 2));
 
-            // Get current resume data
-            const currentResume = await db.getResume((candidate as any).resume_id);
-            const currentParsedData = currentResume.parsed_data || {};
-
-            // Merge LinkedIn data into parsed_data
-            const updatedParsedData = {
-                ...currentParsedData,
-                linkedinData: linkedInData
-            };
-
-            // Update resume with enriched data
-            await db.updateResumeData((candidate as any).resume_id, updatedParsedData);
+            // Update resume with NEW enriched data (Replacement)
+            // The API now returns a complete resume object, so we just save it.
+            await db.updateResumeData((candidate as any).resume_id, newResumeData);
 
             // Also update enriched flag
             await db.updateResume((candidate as any).resume_id, { enriched: true });
@@ -417,6 +415,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
     const value = {
         candidates,
         jobOffers,
+        resumes,
         loading,
         refreshData: loadData,
         addJobOffer,
