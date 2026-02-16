@@ -197,239 +197,243 @@ export function OffersTab({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left: Job Offers List */}
-      <div className="space-y-3">
-        <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wide">Active Offers</h3>
-        <div className="space-y-2">
-          {jobOffers.map(job => (
-            <Card
-              key={job.id}
-              className={`p-4 cursor-pointer transition-all border-2 ${selectedJobId === job.id
-                ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'
-                }`}
-              onClick={() => setSelectedJobId(job.id)}
-            >
-              <h4 className="font-bold text-sm">{job.title}</h4>
-              <p className={`text-xs mt-1 line-clamp-2 ${selectedJobId === job.id ? 'text-blue-100' : 'text-slate-600'}`}>
-                {job.description}
-              </p>
-              <Badge
-                variant={selectedJobId === job.id ? 'default' : 'secondary'}
-                className={`mt-2 text-xs ${selectedJobId === job.id ? 'bg-blue-400 text-white' : ''}`}
+    <div className="h-full flex flex-col lg:overflow-hidden overflow-y-auto p-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-full h-auto min-h-0">
+        {/* Left: Job Offers List */}
+        <div className="space-y-3 lg:h-full h-auto lg:overflow-y-auto pr-2">
+          <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wide">Active Offers</h3>
+          <div className="space-y-2">
+            {jobOffers.map(job => (
+              <Card
+                key={job.id}
+                className={`p-4 cursor-pointer transition-all border-2 ${selectedJobId === job.id
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                  : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'
+                  }`}
+                onClick={() => setSelectedJobId(job.id)}
               >
-                {job.candidateCount || 0} candidates
-              </Badge>
-            </Card>
-          ))}
+                <h4 className="font-bold text-sm">{job.title}</h4>
+                <p className={`text-xs mt-1 line-clamp-2 ${selectedJobId === job.id ? 'text-blue-100' : 'text-slate-600'}`}>
+                  {job.description}
+                </p>
+                <Badge
+                  variant={selectedJobId === job.id ? 'default' : 'secondary'}
+                  className={`mt-2 text-xs ${selectedJobId === job.id ? 'bg-blue-400 text-white' : ''}`}
+                >
+                  {job.candidateCount || 0} candidates
+                </Badge>
+              </Card>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Right: Offer Details & Candidates */}
-      <div className="lg:col-span-2 space-y-4">
-        {selectedJob ? (
-          <>
-            {/* Offer Details */}
-            <Card className="p-6 border border-slate-200 bg-gradient-to-br from-white to-slate-50">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="flex-1">
-                  <h3 className="font-bold text-xl text-slate-900 mb-3">{selectedJob.title}</h3>
-                  <p className="text-sm text-slate-700 mb-5 leading-relaxed">{selectedJob.description}</p>
+        {/* Right: Offer Details & Candidates */}
+        <div className="lg:col-span-2 space-y-4 lg:h-full h-auto flex flex-col lg:overflow-hidden">
+          {selectedJob ? (
+            <>
+              {/* Offer Details */}
+              <Card className="p-6 border border-slate-200 bg-gradient-to-br from-white to-slate-50 shrink-0">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div className="flex-1">
+                    <h3 className="font-bold text-xl text-slate-900 mb-3">{selectedJob.title}</h3>
+                    <p className="text-sm text-slate-700 mb-5 leading-relaxed">{selectedJob.description}</p>
+                  </div>
+                  <RoundsEditor
+                    rounds={selectedJob.rounds || []}
+                    jobTitle={selectedJob.title}
+                    onSaveRounds={(rounds) => onUpdateRounds?.(selectedJob.id, rounds)}
+                  />
                 </div>
-                <RoundsEditor
-                  rounds={selectedJob.rounds || []}
-                  jobTitle={selectedJob.title}
-                  onSaveRounds={(rounds) => onUpdateRounds?.(selectedJob.id, rounds)}
-                />
-              </div>
-              <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">Required Skills</p>
-                <div className="flex flex-wrap gap-2">
-                  {selectedJob.skills_required.map(skill => (
-                    <Badge key={skill} variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100">
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              {selectedJob.rounds && selectedJob.rounds.length > 0 && (
-                <div className="space-y-2 mt-4 pt-4 border-t border-slate-200">
-                  <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">Interview Rounds</p>
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">Required Skills</p>
                   <div className="flex flex-wrap gap-2">
-                    {selectedJob.rounds.map((round) => (
-                      <Badge key={round.id} className="bg-green-100 text-green-700 text-xs">
-                        {round.order}. {round.name}
+                    {selectedJob.skills_required.map(skill => (
+                      <Badge key={skill} variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100">
+                        {skill}
                       </Badge>
                     ))}
                   </div>
                 </div>
-              )}
-            </Card>
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3">
-              {selectedJob?.status === 'Open' && (
-                <Button
-                  size="sm"
-                  onClick={() => onToggleOfferStatus?.(selectedJobId || '')}
-                  className="gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm"
-                >
-                  <Lock className="w-4 h-4" />
-                  Close Offer
-                </Button>
-              )}
-              {selectedJob?.status === 'Closed' && (
-                <Button
-                  size="sm"
-                  onClick={() => onToggleOfferStatus?.(selectedJobId || '')}
-                  className="gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
-                >
-                  <Unlock className="w-4 h-4" />
-                  Reopen Offer
-                </Button>
-              )}
-              <Button
-                size="sm"
-                onClick={handleScore}
-                className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"
-              >
-                <Zap className="w-4 h-4" />
-                Score Candidates
-              </Button>
-              <Button
-                size="sm"
-                className="gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
-                onClick={() => document.getElementById(`resume-upload-${selectedJobId}`)?.click()}
-                disabled={uploadingResume}
-              >
-                <Upload className="w-4 h-4" />
-                {uploadingResume ? 'Uploading...' : 'Add Resume'}
-              </Button>
-              <input
-                id={`resume-upload-${selectedJobId}`}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt,.json,.jpg,.jpeg,.png"
-                onChange={handleResumeUpload}
-                className="hidden"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowFeatureDialog(true)}
-                className="gap-2 border-slate-300 hover:bg-slate-100"
-              >
-                <Search className="w-4 h-4" />
-                CVthèque
-              </Button>
-            </div>
-
-            {/* Candidates Table */}
-            <Card className="overflow-hidden border border-slate-200 shadow-sm">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-100 border-b border-slate-200">
-                    <TableHead className="font-bold text-slate-900">Candidate</TableHead>
-                    <TableHead className="w-20 font-bold text-slate-900">Score</TableHead>
-                    <TableHead className="w-24 font-bold text-slate-900">Status</TableHead>
-                    <TableHead className="w-28 font-bold text-slate-900">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {jobCandidates.map((candidate, idx) => (
-                    <TableRow key={candidate.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                      <TableCell className="font-semibold text-sm text-slate-900">{candidate.name}</TableCell>
-                      <TableCell className="text-sm font-bold">
-                        {candidate.score > 0 ? (
-                          <span className="inline-block px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-bold">{candidate.score}%</span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={candidate.status === 'Declined' ? 'destructive' : 'secondary'}
-                          className="text-xs font-semibold"
-                        >
-                          {candidate.status}
+                {selectedJob.rounds && selectedJob.rounds.length > 0 && (
+                  <div className="space-y-2 mt-4 pt-4 border-t border-slate-200">
+                    <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">Interview Rounds</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedJob.rounds.map((round) => (
+                        <Badge key={round.id} className="bg-green-100 text-green-700 text-xs">
+                          {round.order}. {round.name}
                         </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSelectedCandidate(candidate);
-                              setResumeViewerOpen(true);
-                            }}
-                            className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          >
-                            View
-                          </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Card>
 
-                          {candidate.file_url && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDownload(candidate.file_url!, `resume-${candidate.name.replace(/\s+/g, '_')}`)}
-                              className="h-7 text-xs text-slate-600 hover:text-slate-700 hover:bg-slate-50 gap-1"
-                              title="Download Resume"
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 shrink-0">
+                {selectedJob?.status === 'Open' && (
+                  <Button
+                    size="sm"
+                    onClick={() => onToggleOfferStatus?.(selectedJobId || '')}
+                    className="gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm"
+                  >
+                    <Lock className="w-4 h-4" />
+                    Close Offer
+                  </Button>
+                )}
+                {selectedJob?.status === 'Closed' && (
+                  <Button
+                    size="sm"
+                    onClick={() => onToggleOfferStatus?.(selectedJobId || '')}
+                    className="gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
+                  >
+                    <Unlock className="w-4 h-4" />
+                    Reopen Offer
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={handleScore}
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"
+                >
+                  <Zap className="w-4 h-4" />
+                  Score Candidates
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
+                  onClick={() => document.getElementById(`resume-upload-${selectedJobId}`)?.click()}
+                  disabled={uploadingResume}
+                >
+                  <Upload className="w-4 h-4" />
+                  {uploadingResume ? 'Uploading...' : 'Add Resume'}
+                </Button>
+                <input
+                  id={`resume-upload-${selectedJobId}`}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.json,.jpg,.jpeg,.png"
+                  onChange={handleResumeUpload}
+                  className="hidden"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowFeatureDialog(true)}
+                  className="gap-2 border-slate-300 hover:bg-slate-100"
+                >
+                  <Search className="w-4 h-4" />
+                  CVthèque
+                </Button>
+              </div>
+
+              {/* Candidates Table */}
+              <Card className="overflow-hidden border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+                <div className="overflow-auto flex-1">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-slate-100 z-10 shadow-sm">
+                      <TableRow className="bg-slate-100 border-b border-slate-200 hover:bg-slate-100">
+                        <TableHead className="font-bold text-slate-900">Candidate</TableHead>
+                        <TableHead className="w-20 font-bold text-slate-900">Score</TableHead>
+                        <TableHead className="w-24 font-bold text-slate-900">Status</TableHead>
+                        <TableHead className="w-28 font-bold text-slate-900">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jobCandidates.map((candidate, idx) => (
+                        <TableRow key={candidate.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                          <TableCell className="font-semibold text-sm text-slate-900">{candidate.name}</TableCell>
+                          <TableCell className="text-sm font-bold">
+                            {candidate.score > 0 ? (
+                              <span className="inline-block px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-bold">{candidate.score}%</span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={candidate.status === 'Declined' ? 'destructive' : 'secondary'}
+                              className="text-xs font-semibold"
                             >
-                              <Download className="w-3 h-3" />
-                              Download
-                            </Button>
-                          )}
+                              {candidate.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedCandidate(candidate);
+                                  setResumeViewerOpen(true);
+                                }}
+                                className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              >
+                                View
+                              </Button>
 
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEnrich(candidate.id)}
-                            disabled={enrichLoadingId === candidate.id}
-                            className={`h-7 text-xs gap-1 ${candidate.enriched
-                              ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                              : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
-                              } disabled:text-slate-400`}
-                            title={candidate.enriched ? 'Profile enriched from LinkedIn (Click to re-enrich)' : 'Enrich profile from LinkedIn'}
-                          >
-                            <Linkedin className="w-3 h-3" />
-                            {enrichLoadingId === candidate.id ? 'Enriching...' : candidate.enriched ? 'Enriched' : 'Enrich'}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                              {candidate.file_url && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDownload(candidate.file_url!, `resume-${candidate.name.replace(/\s+/g, '_')}`)}
+                                  className="h-7 text-xs text-slate-600 hover:text-slate-700 hover:bg-slate-50 gap-1"
+                                  title="Download Resume"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  Download
+                                </Button>
+                              )}
+
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEnrich(candidate.id)}
+                                disabled={enrichLoadingId === candidate.id}
+                                className={`h-7 text-xs gap-1 ${candidate.enriched
+                                  ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                                  : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                                  } disabled:text-slate-400`}
+                                title={candidate.enriched ? 'Profile enriched from LinkedIn (Click to re-enrich)' : 'Enrich profile from LinkedIn'}
+                              >
+                                <Linkedin className="w-3 h-3" />
+                                {enrichLoadingId === candidate.id ? 'Enriching...' : candidate.enriched ? 'Enriched' : 'Enrich'}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-12 text-center bg-slate-50 border border-slate-200 h-full flex items-center justify-center flex-col">
+              <div className="text-slate-400 mb-2">📋</div>
+              <p className="text-slate-600 font-medium">Select a job offer from the left to view and manage candidates</p>
             </Card>
-          </>
-        ) : (
-          <Card className="p-12 text-center bg-slate-50 border border-slate-200">
-            <div className="text-slate-400 mb-2">📋</div>
-            <p className="text-slate-600 font-medium">Select a job offer from the left to view and manage candidates</p>
-          </Card>
-        )}
+          )}
+        </div>
+
+        {/* Resume Viewer Modal */}
+        <ResumeViewer
+          candidate={selectedCandidate}
+          open={resumeViewerOpen}
+          onOpenChange={setResumeViewerOpen}
+        />
+
+        {/* Feature Not Implemented Dialog */}
+        <Dialog open={showFeatureDialog} onOpenChange={setShowFeatureDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>CVthèque Search</DialogTitle>
+              <DialogDescription>
+                This feature is not yet implemented. In a production system, this would allow you to search through a centralized resume database.
+              </DialogDescription>
+            </DialogHeader>
+            <Button onClick={() => setShowFeatureDialog(false)}>Close</Button>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      {/* Resume Viewer Modal */}
-      <ResumeViewer
-        candidate={selectedCandidate}
-        open={resumeViewerOpen}
-        onOpenChange={setResumeViewerOpen}
-      />
-
-      {/* Feature Not Implemented Dialog */}
-      <Dialog open={showFeatureDialog} onOpenChange={setShowFeatureDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>CVthèque Search</DialogTitle>
-            <DialogDescription>
-              This feature is not yet implemented. In a production system, this would allow you to search through a centralized resume database.
-            </DialogDescription>
-          </DialogHeader>
-          <Button onClick={() => setShowFeatureDialog(false)}>Close</Button>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

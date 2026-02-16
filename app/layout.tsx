@@ -26,8 +26,14 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ErrorProvider>
           <ATSProvider>
-            <MainNav />
-            {children}
+            <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
+              <div className="flex-none z-10 relative">
+                <MainNav />
+              </div>
+              <main className="flex-1 overflow-y-auto overflow-x-hidden relative w-full">
+                {children}
+              </main>
+            </div>
           </ATSProvider>
         </ErrorProvider>
       </body>

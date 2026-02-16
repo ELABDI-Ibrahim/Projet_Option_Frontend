@@ -106,8 +106,8 @@ export default function LakePage() {
     };
 
     return (
-        <div className="max-w-7xl mx-auto p-6">
-            <div className="flex justify-between items-center mb-6">
+        <div className="max-w-7xl mx-auto p-6 h-full flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center mb-6 shrink-0">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
                         Resume Lake <Badge variant="outline" className="text-sm font-normal text-slate-500 bg-slate-100">{resumes.length} Resumes</Badge>
@@ -116,91 +116,93 @@ export default function LakePage() {
                 </div>
             </div>
 
-            <Card className="overflow-hidden border border-slate-200 shadow-sm">
-                <Table>
-                    <TableHeader>
-                        <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200">
-                            <TableHead className="font-bold text-slate-900 w-[250px]">Name</TableHead>
-                            <TableHead className="font-bold text-slate-900 w-[150px]">Date Added</TableHead>
-                            <TableHead className="font-bold text-slate-900">Source</TableHead>
-                            <TableHead className="font-bold text-slate-900">Enriched</TableHead>
-                            <TableHead className="font-bold text-slate-900 text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {resumes.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={5} className="text-center py-12 text-slate-500">
-                                    <div className="flex flex-col items-center gap-2">
-                                        <Search className="w-8 h-8 text-slate-300" />
-                                        <p>No resumes found in the lake.</p>
-                                    </div>
-                                </TableCell>
+            <Card className="overflow-hidden border border-slate-200 shadow-sm flex-1 flex flex-col">
+                <div className="overflow-y-auto flex-1">
+                    <Table>
+                        <TableHeader className="sticky top-0 bg-slate-50 z-10 shadow-sm">
+                            <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200">
+                                <TableHead className="font-bold text-slate-900 w-[250px]">Name</TableHead>
+                                <TableHead className="font-bold text-slate-900 w-[150px]">Date Added</TableHead>
+                                <TableHead className="font-bold text-slate-900">Source</TableHead>
+                                <TableHead className="font-bold text-slate-900">Enriched</TableHead>
+                                <TableHead className="font-bold text-slate-900 text-right">Actions</TableHead>
                             </TableRow>
-                        ) : (
-                            resumes.map((resume) => {
-                                const name = resume.candidate?.full_name || resume.parsed_data?.name || "Unknown";
-                                const date = new Date(resume.created_at).toLocaleDateString(undefined, {
-                                    year: 'numeric', month: 'short', day: 'numeric'
-                                });
-                                const isEnriched = resume.enriched;
+                        </TableHeader>
+                        <TableBody>
+                            {resumes.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center py-12 text-slate-500">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <Search className="w-8 h-8 text-slate-300" />
+                                            <p>No resumes found in the lake.</p>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                resumes.map((resume) => {
+                                    const name = resume.candidate?.full_name || resume.parsed_data?.name || "Unknown";
+                                    const date = new Date(resume.created_at).toLocaleDateString(undefined, {
+                                        year: 'numeric', month: 'short', day: 'numeric'
+                                    });
+                                    const isEnriched = resume.enriched;
 
-                                return (
-                                    <TableRow key={resume.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-100 last:border-0">
-                                        <TableCell className="font-medium text-slate-900">{name}</TableCell>
-                                        <TableCell className="text-slate-500">{date}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline" className="capitalize text-slate-600 bg-slate-50 font-normal">
-                                                {resume.source}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            {isEnriched ? (
-                                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 shadow-none border border-green-200 font-medium">Yes</Badge>
-                                            ) : (
-                                                <Badge variant="secondary" className="text-slate-500 bg-slate-100 hover:bg-slate-100 shadow-none font-normal">No</Badge>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <div className="flex justify-end gap-1">
-                                                <Button size="sm" variant="ghost" onClick={() => handleView(resume)} title="View Resume" className="h-8 w-8 p-0 text-slate-500 hover:text-blue-600 hover:bg-blue-50">
-                                                    <Eye className="w-4 h-4" />
-                                                </Button>
+                                    return (
+                                        <TableRow key={resume.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-100 last:border-0">
+                                            <TableCell className="font-medium text-slate-900">{name}</TableCell>
+                                            <TableCell className="text-slate-500">{date}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline" className="capitalize text-slate-600 bg-slate-50 font-normal">
+                                                    {resume.source}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                {isEnriched ? (
+                                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 shadow-none border border-green-200 font-medium">Yes</Badge>
+                                                ) : (
+                                                    <Badge variant="secondary" className="text-slate-500 bg-slate-100 hover:bg-slate-100 shadow-none font-normal">No</Badge>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-1">
+                                                    <Button size="sm" variant="ghost" onClick={() => handleView(resume)} title="View Resume" className="h-8 w-8 p-0 text-slate-500 hover:text-blue-600 hover:bg-blue-50">
+                                                        <Eye className="w-4 h-4" />
+                                                    </Button>
 
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => handleEnrich(resume)}
-                                                    disabled={isEnriched || enrichLoadingId === resume.id || !resume.candidate_id}
-                                                    title={isEnriched ? "Already Enriched" : "Enrich from LinkedIn"}
-                                                    className={`h-8 w-8 p-0 ${isEnriched ? 'text-green-600 opacity-50 cursor-default' : 'text-blue-600 hover:bg-blue-50'}`}
-                                                >
-                                                    {enrichLoadingId === resume.id ? (
-                                                        <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></span>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => handleEnrich(resume)}
+                                                        disabled={isEnriched || enrichLoadingId === resume.id || !resume.candidate_id}
+                                                        title={isEnriched ? "Already Enriched" : "Enrich from LinkedIn"}
+                                                        className={`h-8 w-8 p-0 ${isEnriched ? 'text-green-600 opacity-50 cursor-default' : 'text-blue-600 hover:bg-blue-50'}`}
+                                                    >
+                                                        {enrichLoadingId === resume.id ? (
+                                                            <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></span>
+                                                        ) : (
+                                                            <Linkedin className="w-4 h-4" />
+                                                        )}
+                                                    </Button>
+
+                                                    {resume.file_url ? (
+                                                        <a href={getStorageUrl(resume.file_url) || '#'} target="_blank" rel="noopener noreferrer" title="Download Resume">
+                                                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                                                                <Download className="w-4 h-4" />
+                                                            </Button>
+                                                        </a>
                                                     ) : (
-                                                        <Linkedin className="w-4 h-4" />
-                                                    )}
-                                                </Button>
-
-                                                {resume.file_url ? (
-                                                    <a href={getStorageUrl(resume.file_url) || '#'} target="_blank" rel="noopener noreferrer" title="Download Resume">
-                                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                                                        <Button size="sm" variant="ghost" disabled title="No File" className="h-8 w-8 p-0 text-slate-300">
                                                             <Download className="w-4 h-4" />
                                                         </Button>
-                                                    </a>
-                                                ) : (
-                                                    <Button size="sm" variant="ghost" disabled title="No File" className="h-8 w-8 p-0 text-slate-300">
-                                                        <Download className="w-4 h-4" />
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })
-                        )}
-                    </TableBody>
-                </Table>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
             </Card>
 
             <ResumeViewer

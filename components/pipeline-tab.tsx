@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Layout, GripVertical } from "lucide-react";
 import { ResumeViewer } from './resume-viewer';
 import type { Candidate, JobOffer } from '@/lib/types';
 
@@ -96,64 +96,125 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
     }
   };
 
+  // Placeholder for new functions and state variables introduced in the provided snippet
+  // These would need to be properly defined for the new UI to work.
+  const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, candidateId: string) => {
+    e.dataTransfer.setData('candidateId', candidateId);
+    setDraggedCandidateId(candidateId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Allow drop
+  };
+
+  const handleDrop = (e: React.DragEvent, targetStageId: string) => {
+    e.preventDefault();
+    const candidateId = e.dataTransfer.getData('candidateId');
+    if (candidateId && onUpdateStage) {
+      onUpdateStage(candidateId, targetStageId);
+    }
+    setDraggedCandidateId(null);
+  };
+
+  // This `stages` array would need to be derived from `rounds` and `groupedByStage`
+  // For now, creating a mock structure based on the provided snippet's usage
+  const stages = rounds.map(round => ({
+    id: round.id,
+    name: round.name,
+    candidates: groupedByStage[round.id] || [],
+  }));
+
+  // Placeholder for getStageColor function
+  const getStageColor = (stageName: string) => {
+    switch (stageName) {
+      case 'Application Review': return 'border-b-blue-500';
+      case 'Interview': return 'border-b-green-500';
+      case 'Offer': return 'border-b-purple-500';
+      case 'Hired': return 'border-b-teal-500';
+      default: return 'border-b-slate-500';
+    }
+  };
+
+
   return (
-    <div className="space-y-6">
-      {/* Job Offer Selector */}
-      <Card className="p-5 border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 shadow-sm">
-        <div className="space-y-3">
-          <label className="text-sm font-bold text-slate-900 uppercase tracking-wide">Select Job Offer</label>
-          <Select value={selectedJobId || ''} onValueChange={setSelectedJobId}>
-            <SelectTrigger className="w-full border-slate-300 bg-white hover:border-blue-400 focus:border-blue-500">
-              <SelectValue placeholder="Choose a job offer to view its pipeline..." />
-            </SelectTrigger>
-            <SelectContent>
-              {jobOffers.map(job => (
-                <SelectItem key={job.id} value={job.id}>
-                  {job.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedJobId && (
-            <p className="text-xs text-blue-700 font-medium">
-              Viewing candidates for: <span className="font-bold">{jobOffers.find(j => j.id === selectedJobId)?.title}</span>
-            </p>
-          )}
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header / Filter */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <Layout className="w-5 h-5 text-slate-500" />
+          <h2 className="text-lg font-bold text-slate-900">Pipeline View</h2>
         </div>
-      </Card>
+        <Select
+          value={selectedJobId || ''}
+          onValueChange={setSelectedJobId}
+        >
+          <SelectTrigger className="w-[280px]">
+            <SelectValue placeholder="Select a Job Offer" />
+          </SelectTrigger>
+          <SelectContent>
+            {jobOffers.map((job) => (
+              <SelectItem key={job.id} value={job.id}>
+                {job.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Pipeline Grid */}
       {selectedJobId ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 overflow-x-auto pb-4">
-          {rounds.map((round, index) => {
-            const stageCandidates = groupedByStage[round.id] || [];
-            const nextStage = rounds[index + 1];
-
-            return (
-              <div key={round.id} className="min-w-[280px] bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex flex-col h-full">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-5 h-5 text-white bg-blue-500 rounded-full p-1 flex items-center justify-center text-xs font-bold">{index + 1}</div>
-                  <h3 className="font-bold text-sm text-slate-900">{round.name}</h3>
-                  <Badge className="ml-auto bg-blue-600 text-white font-bold">{stageCandidates.length}</Badge>
+        <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
+          <div className="flex gap-4 h-full min-w-[1000px]">
+            {stages.map((stage) => (
+              <div key={stage.id} className="flex-1 flex flex-col min-w-[280px] bg-slate-100/50 rounded-xl border border-slate-200/60">
+                {/* Column Header */}
+                <div className={`p-3 border-b-2 ${getStageColor(stage.name)} bg-white rounded-t-xl`}>
+                  <div className="flex justify-between items-center mb-1">
+                    <h3 className="font-bold text-slate-800 text-sm">{stage.name}</h3>
+                    <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-bold">
+                      {stage.candidates.length}
+                    </Badge>
+                  </div>
+                  <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`h-full w-1/2 ${getStageColor(stage.name).replace('border-b-', 'bg-')}`} />
+                  </div>
                 </div>
 
-                <div className="space-y-3 flex-1">
-                  {stageCandidates.map(candidate => (
-                    <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-sm text-slate-900 truncate">{candidate.name}</h4>
-                          <p className="text-xs text-slate-500 truncate">{candidate.location}</p>
-                        </div>
-                        <Badge className={`shrink-0 font-bold text-xs ${candidate.score > 0
-                          ? 'bg-green-600 text-white'
-                          : 'bg-slate-200 text-slate-600'
-                          }`}>
-                          {candidate.score > 0 ? `${candidate.score}%` : 'Not scored'}
+                {/* Droppable Area */}
+                <div
+                  className="p-3 space-y-3 flex-1 overflow-y-auto"
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, stage.id)}
+                >
+                  {stage.candidates.map((candidate) => (
+                    <Card
+                      key={candidate.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, candidate.id)}
+                      className="p-3 cursor-move hover:shadow-md transition-shadow border-slate-200 bg-white group"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-sm text-slate-900 line-clamp-1">{candidate.name}</h4>
+                        {candidate.score > 0 && (
+                          <Badge variant="outline" className="text-[10px] py-0 h-5 bg-green-50 text-green-700 border-green-200 font-bold">
+                            {candidate.score}%
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mb-3 truncate">{candidate.location}</p>
+
+                      <div className="flex items-center justify-between mt-auto pt-2 border-t border-slate-50">
+                        <Badge variant="secondary" className="text-[10px] font-normal h-5 bg-slate-50">
+                          {new Date().toLocaleDateString()}
                         </Badge>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <GripVertical className="w-4 h-4 text-slate-300" />
+                        </div>
                       </div>
 
-                      <div className="flex gap-1.5 text-xs pt-2 border-t border-slate-200">
+                      <div className="flex gap-1.5 text-xs pt-2 border-t border-slate-200 mt-2">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -166,16 +227,20 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
                           View
                         </Button>
 
-                        {nextStage && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 font-medium px-1"
-                            onClick={() => handleMoveStage(candidate.id, nextStage.id)}
-                          >
-                            Advance
-                          </Button>
-                        )}
+                        {(() => {
+                          const currentStageIndex = rounds.findIndex(r => r.id === stage.id);
+                          const nextStage = rounds[currentStageIndex + 1];
+                          return nextStage && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 font-medium px-1"
+                              onClick={() => handleMoveStage(candidate.id, nextStage.id)}
+                            >
+                              Advance
+                            </Button>
+                          );
+                        })()}
 
                         <Button
                           size="sm"
@@ -189,15 +254,15 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
                     </Card>
                   ))}
 
-                  {stageCandidates.length === 0 && (
+                  {stage.candidates.length === 0 && (
                     <div className="text-center py-8 text-slate-400 text-sm font-medium">
                       No candidates
                     </div>
                   )}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       ) : (
         <Card className="p-12 text-center bg-slate-50 border border-slate-200">
@@ -205,31 +270,34 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
           <p className="text-lg font-semibold text-slate-600">Select a job offer to view the pipeline</p>
           <p className="text-sm text-slate-500 mt-2">Track candidates through customized pipeline stages.</p>
         </Card>
-      )}
+      )
+      }
 
       {/* Declined Column */}
-      {declined.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mt-6">
-          <div className="flex items-center gap-3 mb-4">
-            <XCircle className="w-5 h-5 text-white bg-red-500 rounded-full p-1" />
-            <h3 className="font-bold text-sm text-slate-900">Declined</h3>
-            <Badge className="ml-auto bg-slate-600 text-white font-bold">{declined.length}</Badge>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {declined.map(candidate => (
-              <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow opacity-75">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm text-slate-900 truncate">{candidate.name}</h4>
-                    <p className="text-xs text-slate-500 truncate">{candidate.location}</p>
+      {
+        declined.length > 0 && (
+          <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mt-6">
+            <div className="flex items-center gap-3 mb-4">
+              <XCircle className="w-5 h-5 text-white bg-red-500 rounded-full p-1" />
+              <h3 className="font-bold text-sm text-slate-900">Declined</h3>
+              <Badge className="ml-auto bg-slate-600 text-white font-bold">{declined.length}</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {declined.map(candidate => (
+                <Card key={candidate.id} className="p-3 space-y-2 bg-white border border-slate-200 hover:shadow-md transition-shadow opacity-75">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm text-slate-900 truncate">{candidate.name}</h4>
+                      <p className="text-xs text-slate-500 truncate">{candidate.location}</p>
+                    </div>
+                    <Badge className="shrink-0 bg-red-100 text-red-700 font-bold text-xs">Declined</Badge>
                   </div>
-                  <Badge className="shrink-0 bg-red-100 text-red-700 font-bold text-xs">Declined</Badge>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Resume Viewer */}
       <ResumeViewer
@@ -269,6 +337,6 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
         <p>Job Rounds: {rounds.map(r => `${r.name} (${r.id})`).join(', ')}</p>
         <p>Candidates in View: {jobCandidates.length}</p>
       </div>
-    </div>
+    </div >
   );
 }
