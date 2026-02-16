@@ -109,7 +109,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
 
                     enriched: resume?.enriched || false,
                     linkedinData: parsedData.linkedinData,
-                    file_url: resume?.file_url // Map file URL from resume
+                    file_url: resume?.file_url || undefined // Map file URL from resume, ensure undefined if null
                 };
             });
 
@@ -285,20 +285,51 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
 
 
             // 3. Create Application
+            // Validate Job Offer ID for Application
+            if (!candidate.jobOfferId) {
+                console.warn('[ATS Context] No Job Offer ID provided for candidate. Skipping application creation.');
+                await loadData();
+                return;
+            }
+
             const stages = await db.getPipelineStages(candidate.jobOfferId);
             const firstStage = stages[0];
 
-            await db.createApplication({
-                job_offer_id: candidate.jobOfferId,
-                candidate_id: candidateId,
-                resume_id: newResume.id,
-                current_stage_id: firstStage?.id,
-                status: 'applied'
-            });
+            if (!firstStage) {
+                console.error('[ATS Context] No pipeline stages found for job:', candidate.jobOfferId);
+                throw new Error(`No pipeline stages defined for job ${candidate.jobOfferId}. Cannot create application.`);
+            }
+
+            // Check if application already exists
+            // We use a direct DB query to be sure, avoiding stale state or type issues with `getApplications` cache.
+            const { data: existingAppCheck } = await db.supabase
+                .from('applications')
+                .select('id')
+                .eq('job_offer_id', candidate.jobOfferId)
+                .eq('candidate_id', candidateId)
+                .single();
+
+            if (existingAppCheck) {
+                console.log('[ATS Context] Application already exists for this candidate and job. Skipping creation.');
+            } else {
+                await db.createApplication({
+                    job_offer_id: candidate.jobOfferId,
+                    candidate_id: candidateId,
+                    resume_id: newResume.id,
+                    current_stage_id: firstStage.id,
+                    status: 'applied'
+                });
+            }
+
+
 
             await loadData();
         } catch (error) {
             console.error('[ATS Context] Error adding candidate:', error);
+            // Log full error details
+            if (typeof error === 'object' && error !== null) {
+                console.error('[ATS Context] Error Details:', JSON.stringify(error, null, 2));
+            }
             throw error;
         }
     };

@@ -7,9 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Download, Eye, Linkedin, Search } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Download, Eye, Linkedin, Search, Sparkles } from "lucide-react";
 import { ResumeViewer } from '@/components/resume-viewer';
-import { findLinkedInProfile, scrapeLinkedInProfile } from '@/lib/api-service';
+import { findLinkedInProfile, enrichResume } from '@/lib/api-service';
 import { getStorageUrl } from '@/lib/utils';
 
 export default function LakePage() {
@@ -18,6 +19,10 @@ export default function LakePage() {
     const [viewerOpen, setViewerOpen] = useState(false);
     const [selectedResume, setSelectedResume] = useState<any>(null);
     const [enrichLoadingId, setEnrichLoadingId] = useState<string | null>(null);
+
+    // Bulk Enrich State
+    const [bulkEnriching, setBulkEnriching] = useState(false);
+    const [enrichProgress, setEnrichProgress] = useState({ current: 0, total: 0 });
 
     // Map Resume to Candidate-like object for Viewer
     const mapResumeToCandidate = (resume: any) => {
@@ -65,37 +70,49 @@ export default function LakePage() {
 
         try {
             console.log('[Lake] Enriching resume:', resume.id);
-            let linkedInUrl = resume.candidate?.linkedin_url || resume.parsed_data?.linkedin_url;
-            const name = resume.candidate?.full_name || resume.parsed_data?.name;
+            const candidate = resume.candidate || {};
+            const parsed = resume.parsed_data || {};
 
-            if (!linkedInUrl) {
-                console.log('[Lake] No LinkedIn URL, discovering...');
-                // Try to find LinkedIn URL
-                const company = resume.parsed_data?.experiences?.[0]?.institution_name;
-                const location = resume.candidate?.location || resume.parsed_data?.location;
+            // Construct ResumeParseData from candidate/parsed fields
+            // This is crucial: we need to pass the existing data to enrichResume so it can be merged/used
+            const resumeData: any = {
+                name: candidate.full_name || parsed.name,
+                email: candidate.email || parsed.email,
+                phone: candidate.phone || parsed.phone,
+                location: candidate.location || parsed.location,
+                about: parsed.summary || parsed.about,
+                linkedin_url: candidate.linkedin_url || parsed.linkedin_url,
+                experiences: parsed.experiences,
+                educations: parsed.educations,
+                skills: parsed.skills,
+                projects: parsed.projects,
+                contacts: parsed.contacts,
+                accomplishments: parsed.accomplishments,
+                interests: parsed.interests,
+                open_to_work: parsed.open_to_work
+            };
 
-                linkedInUrl = await findLinkedInProfile(name, company, location);
+            console.log('[Lake] Calling enrichResume API...');
 
-                if (linkedInUrl) {
-                    // Update candidate LinkedIn URL
-                    await updateCandidateLinkedIn(candidateId, linkedInUrl);
+            // Usage of enrichResume instead of scrapeLinkedInProfile
+            const newResumeData = await enrichResume(
+                resumeData,
+                candidate.linkedin_url || parsed.linkedin_url,
+                candidate.full_name || parsed.name
+            );
+
+            console.log('[Lake] Enrichment successful, updating resume...');
+
+            if (newResumeData) {
+                // Update candidate resume with new data
+                await updateCandidateResume(candidateId, newResumeData);
+                // Also update LinkedIn URL if discovered/changed
+                if (newResumeData.linkedin_url && newResumeData.linkedin_url !== candidate.linkedin_url) {
+                    await updateCandidateLinkedIn(candidateId, newResumeData.linkedin_url);
                 }
             }
 
-            if (!linkedInUrl) {
-                throw new Error(`Could not find LinkedIn profile for ${name}`);
-            }
-
-            console.log('[Lake] Scraping LinkedIn:', linkedInUrl);
-            const linkedInData = await scrapeLinkedInProfile(linkedInUrl, name);
-
-            if (linkedInData) {
-                console.log('[Lake] Enrichment successful, updating resume...');
-                await updateCandidateResume(candidateId, linkedInData);
-                await refreshData();
-            } else {
-                throw new Error("Failed to scrape LinkedIn data");
-            }
+            await refreshData();
 
         } catch (error) {
             console.error('[Lake] Enrichment failed:', error);
@@ -103,6 +120,44 @@ export default function LakePage() {
         } finally {
             setEnrichLoadingId(null);
         }
+    };
+
+    const handleEnrichAll = async () => {
+        // Filter resumes that are NOT already enriched
+        const unenrichedResumes = resumes.filter(r => !r.enriched && r.candidate_id);
+
+        if (unenrichedResumes.length === 0) {
+            showError("All resumes are already enriched!", "Nothing to Enrich");
+            return;
+        }
+
+        setBulkEnriching(true);
+        setEnrichProgress({ current: 0, total: unenrichedResumes.length });
+
+        console.log(`[Lake] Starting bulk enrichment for ${unenrichedResumes.length} resumes...`);
+
+        // Process sequentially to avoid rate limits
+        for (let i = 0; i < unenrichedResumes.length; i++) {
+            const resume = unenrichedResumes[i];
+            try {
+                // Update progress before starting (shows working on X/Y)
+                setEnrichProgress(prev => ({ ...prev, current: i + 1 }));
+
+                await handleEnrich(resume);
+
+                // Small delay to be nice to the API/LinkedIn
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+            } catch (error) {
+                console.error(`[Lake] Failed to enrich resume ${resume.id} during bulk process`, error);
+                // Continue to next resume even if one fails
+            }
+        }
+
+        setBulkEnriching(false);
+        setEnrichProgress({ current: 0, total: 0 });
+        await refreshData();
+        console.log('[Lake] Bulk enrichment completed');
     };
 
     return (
@@ -113,6 +168,26 @@ export default function LakePage() {
                         Resume Lake <Badge variant="outline" className="text-sm font-normal text-slate-500 bg-slate-100">{resumes.length} Resumes</Badge>
                     </h1>
                     <p className="text-slate-500 mt-1">All resumes sorted by date. Search, View, Enrich and Download.</p>
+                </div>
+                <div className="flex gap-3">
+                    {bulkEnriching ? (
+                        <div className="flex flex-col w-48 gap-1">
+                            <div className="flex justify-between text-xs text-slate-600">
+                                <span>Enriching...</span>
+                                <span>{enrichProgress.current} / {enrichProgress.total}</span>
+                            </div>
+                            <Progress value={(enrichProgress.current / enrichProgress.total) * 100} className="h-2" />
+                        </div>
+                    ) : (
+                        <Button
+                            onClick={handleEnrichAll}
+                            disabled={resumes.filter(r => !r.enriched && r.candidate_id).length === 0}
+                            className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            Enrich All ({resumes.filter(r => !r.enriched && r.candidate_id).length})
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -172,7 +247,7 @@ export default function LakePage() {
                                                         size="sm"
                                                         variant="ghost"
                                                         onClick={() => handleEnrich(resume)}
-                                                        disabled={isEnriched || enrichLoadingId === resume.id || !resume.candidate_id}
+                                                        disabled={isEnriched || enrichLoadingId === resume.id || !resume.candidate_id || bulkEnriching}
                                                         title={isEnriched ? "Already Enriched" : "Enrich from LinkedIn"}
                                                         className={`h-8 w-8 p-0 ${isEnriched ? 'text-green-600 opacity-50 cursor-default' : 'text-blue-600 hover:bg-blue-50'}`}
                                                     >

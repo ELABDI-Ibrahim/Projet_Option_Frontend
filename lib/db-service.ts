@@ -392,7 +392,7 @@ export async function getApplications(jobOfferId?: string) {
 }
 
 export async function createApplication(application: Omit<Application, 'id' | 'applied_at' | 'updated_at' | 'deleted_at'>) {
-  console.log('[DB] Creating new application...');
+  console.log('[DB] Creating new application...', JSON.stringify(application, null, 2));
 
   const { data, error } = await supabase
     .from('applications')
@@ -401,6 +401,11 @@ export async function createApplication(application: Omit<Application, 'id' | 'a
 
   if (error) {
     console.error('[DB] ❌ Error creating application:', error);
+    console.error('[DB] Application payload:', application);
+    console.error('[DB] Error details - Message:', error.message);
+    console.error('[DB] Error details - Code:', error.code);
+    console.error('[DB] Error details - Details:', error.details);
+    console.error('[DB] Error details - Hint:', error.hint);
     throw error;
   }
 

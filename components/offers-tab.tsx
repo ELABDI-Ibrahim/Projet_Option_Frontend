@@ -12,9 +12,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Zap, Plus, Upload, Search, Lock, Unlock, Linkedin, Download } from "lucide-react";
 import { ResumeViewer } from './resume-viewer';
 import { RoundsEditor } from './rounds-editor';
-import { enrichCandidateFromResume } from '@/lib/api-service';
+import { enrichCandidateFromResume, uploadResume } from '@/lib/api-service';
 import type { Candidate, JobOffer, Round } from '@/lib/types';
 import { useError } from '@/lib/error-context';
+import { useATS } from '@/lib/ats-context';
 
 interface OffersTabProps {
   jobOffers: JobOffer[];
@@ -47,6 +48,7 @@ export function OffersTab({
   const [uploadingResume, setUploadingResume] = useState(false);
 
   const { showError } = useError();
+  const { refreshData } = useATS();
 
 
   const selectedJob = jobOffers.find(j => j.id === selectedJobId);
@@ -107,74 +109,120 @@ export function OffersTab({
   };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploadingResume(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
-      console.log('[v0] Parsing resume and finding LinkedIn profile:', file.name);
+      // Convert FileList to Array
+      const fileArray = Array.from(files);
 
-      // Parse resume and find LinkedIn URL (NO scraping yet)
-      const { resume, linkedInUrl } = await enrichCandidateFromResume(file);
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        console.log(`[v0] Processing file ${i + 1}/${fileArray.length}: ${file.name}`);
 
-      if (!resume?.name) {
-        throw new Error('Could not extract name from resume');
+        // Check if Zip
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          try {
+            console.log('[v0] Detected Zip file, using Bulk Upload API...');
+            await uploadResume(file, selectedJobId || undefined);
+            console.log('[v0] Zip upload successful');
+            successCount++;
+            // For Zip, we should probably refresh data immediately as we don't know how many candidates were added
+            await refreshData();
+          } catch (error) {
+            console.error('[v0] Zip upload failed:', error);
+            failCount++;
+            const msg = error instanceof Error ? error.message : String(error);
+            showError(`Failed to upload ${file.name}: ${msg}`, 'Upload Failed');
+          }
+          continue;
+        }
+
+        // Standard File Upload (PDF, Doc, etc.)
+        try {
+          console.log('[v0] Parsing resume and finding LinkedIn profile:', file.name);
+
+          // Parse resume and find LinkedIn URL (NO scraping yet)
+          const { resume, linkedInUrl } = await enrichCandidateFromResume(file);
+
+          if (!resume?.name) {
+            throw new Error('Could not extract name from resume');
+          }
+
+          console.log('[v0] Resume parsed:', { name: resume.name, linkedInUrl });
+
+          // Extract email from contacts (usually first contact is email)
+          const email = resume.contacts?.find(c => c.includes('@')) || undefined;
+
+          // Create candidate with parsed data and LinkedIn URL for future enrichment
+          const newCandidate: Candidate = {
+            id: `uploaded-${Date.now()}-${i}`, // Unique ID for temp
+            jobOfferId: selectedJobId || undefined,
+            source: 'cvtheque', // Default source for now, effectively "Uploaded"
+            score: 0,
+            currentRound: 0,
+            status: 'Pending',
+            name: resume.name,
+            email: email,
+            location: resume.location || 'Not specified',
+            about: resume.about || `Resume uploaded: ${file.name}`,
+            linkedin_url: linkedInUrl || resume.linkedin_url || '',
+            open_to_work: resume.open_to_work ?? true,
+            experiences: resume.experiences?.map(exp => ({
+              ...exp,
+              linkedin_url: exp.linkedin_url || null,
+              from_date: exp.from_date || '', // Ensure string for types
+              to_date: exp.to_date || '',   // Ensure string for types
+              duration: exp.duration || '',
+              location: exp.location || '',
+              description: exp.description || ''
+            })) || [],
+            educations: resume.educations?.map(edu => ({
+              ...edu,
+              linkedin_url: edu.linkedin_url || null,
+              from_date: edu.from_date || '',
+              to_date: edu.to_date || '',
+              duration: edu.duration || '',
+              location: edu.location || '',
+              description: edu.description || ''
+            })) || [],
+            skills: resume.skills || [],
+            projects: resume.projects || [],
+            contacts: resume.contacts || [],
+            accomplishments: resume.accomplishments || [],
+            interests: resume.interests || [],
+            enriched: false,
+            file: file // Pass the file object for upload
+          };
+
+          await onAddCandidate(newCandidate);
+          successCount++;
+
+        } catch (error) {
+          console.error(`[v0] Error processing file ${file.name}:`, error);
+          failCount++;
+          const msg = error instanceof Error ? error.message : String(error);
+          showError(`Failed to process ${file.name}: ${msg}`, 'Upload Error');
+        }
       }
 
-      console.log('[v0] Resume parsed:', { name: resume.name, linkedInUrl });
+      if (successCount > 0 && failCount === 0) {
+        // All good
+      } else if (successCount > 0 && failCount > 0) {
+        showError(`Uploaded ${successCount} files, but ${failCount} failed.`, 'Partial Success');
+      }
 
-      // Extract email from contacts (usually first contact is email)
-      const email = resume.contacts?.find(c => c.includes('@')) || undefined;
-
-      // Create candidate with parsed data and LinkedIn URL for future enrichment
-      const newCandidate: Candidate = {
-        id: `uploaded-${Date.now()}`,
-        jobOfferId: selectedJobId || undefined,
-        source: 'cvtheque', // Default source for now, effectively "Uploaded"
-        score: 0,
-        currentRound: 0,
-        status: 'Pending',
-        name: resume.name,
-        email: email,
-        location: resume.location || 'Not specified',
-        about: resume.about || `Resume uploaded: ${file.name}`,
-        linkedin_url: linkedInUrl || resume.linkedin_url || '',
-        open_to_work: resume.open_to_work ?? true,
-        experiences: resume.experiences.map(exp => ({
-          ...exp,
-          linkedin_url: exp.linkedin_url || null,
-          from_date: exp.from_date || '', // Ensure string for types
-          to_date: exp.to_date || '',   // Ensure string for types
-          duration: exp.duration || '',
-          location: exp.location || '',
-          description: exp.description || ''
-        })) || [],
-        educations: resume.educations.map(edu => ({
-          ...edu,
-          linkedin_url: edu.linkedin_url || null,
-          from_date: edu.from_date || '',
-          to_date: edu.to_date || '',
-          duration: edu.duration || '',
-          location: edu.location || '',
-          description: edu.description || ''
-        })) || [],
-        skills: resume.skills || [],
-        projects: resume.projects || [],
-        contacts: resume.contacts || [],
-        accomplishments: resume.accomplishments || [],
-        interests: resume.interests || [],
-        enriched: false,
-        file: file // Pass the file object for upload
-      };
-
-      onAddCandidate(newCandidate);
     } catch (error) {
-      console.error('[v0] Error parsing resume:', error);
+      console.error('[v0] Global upload error:', error);
       const msg = error instanceof Error ? error.message : String(error);
       showError(msg, 'Upload Failed');
     } finally {
       setUploadingResume(false);
-      e.target.value = '';
+      e.target.value = ''; // Reset input
     }
   };
 
@@ -310,9 +358,10 @@ export function OffersTab({
                 <input
                   id={`resume-upload-${selectedJobId}`}
                   type="file"
-                  accept=".pdf,.doc,.docx,.txt,.json,.jpg,.jpeg,.png"
+                  accept=".pdf,.doc,.docx,.txt,.json,.jpg,.jpeg,.png,.zip"
                   onChange={handleResumeUpload}
                   className="hidden"
+                  multiple
                 />
                 <Button
                   size="sm"
