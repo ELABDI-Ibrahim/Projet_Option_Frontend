@@ -19,16 +19,24 @@ interface ATSContextType {
     updateJobRounds: (jobId: string, rounds: Round[]) => Promise<void>;
     scoreCandidates: (jobId: string) => Promise<void>;
     updateCandidateResume: (candidateId: string, updates: any) => Promise<void>;
+    updateResume: (resumeId: string, updates: any) => Promise<void>;
     updateCandidateLinkedIn: (candidateId: string, linkedInUrl: string) => Promise<void>;
 }
 
 const ATSContext = createContext<ATSContextType | undefined>(undefined);
 
 export function ATSProvider({ children }: { children: React.ReactNode }) {
+    // ... existing state ...
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [jobOffers, setJobOffers] = useState<JobOffer[]>([]);
     const [resumes, setResumes] = useState<(Resume & { candidate?: any })[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // ... existing loadData ...
+
+    // ... other methods ...
+
+
 
     const loadData = useCallback(async () => {
         try {
@@ -85,7 +93,12 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
                     resume_id: resume?.id, // Important for updates
                     jobOfferId: app.job_offer_id,
                     source: candidate.source as any,
-                    score: 0, // Scores are fetched separately if needed, or we can fetch them here
+                    // Find the latest score of type 'heuristic_match' (or legacy 'skills_match')
+                    score: (app.application_scores && app.application_scores.length > 0)
+                        ? (app.application_scores
+                            .filter((s: any) => s.score_type === 'heuristic_match' || s.score_type === 'skills_match')
+                            .sort((a: any, b: any) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime())[0]?.score_value || 0)
+                        : 0,
                     status: (app.status === 'shortlisted' ? 'Next Round' :
                         app.status === 'declined' ? 'Declined' : 'Pending') as any,
                     currentRound: 0, // Visual mostly
@@ -384,59 +397,93 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
     };
 
     const scoreCandidates = async (jobId: string) => {
-        // Placeholder for scoring logic integration
-        console.log('[ATS Context] Scoring candidates for job:', jobId);
+        try {
+            console.log('[ATS Context] Scoring candidates for job:', jobId);
+            await db.autoScoreCandidates(jobId);
+            await loadData();
+        } catch (error) {
+            console.error('[ATS Context] Error scoring candidates:', error);
+        }
+    };
+
+    const updateResume = async (resumeId: string, newResumeData: any) => {
+        try {
+            console.log('[ATS Context] Updating resume:', resumeId);
+
+            // 1. Optimistic Update
+            setResumes(prev => prev.map(r => {
+                if (r.id === resumeId) {
+                    return {
+                        ...r,
+                        enriched: true,
+                        parsed_data: {
+                            ...r.parsed_data,
+                            ...newResumeData
+                        }
+                    };
+                }
+                return r;
+            }));
+
+            // 2. Database Update
+            await db.updateResumeData(resumeId, newResumeData);
+
+            // 3. Background Refresh
+            loadData();
+            console.log('[ATS Context] Resume updated successfully');
+        } catch (error) {
+            console.error('[ATS Context] Error updating resume:', error);
+            await loadData();
+        }
     };
 
     const updateCandidateResume = async (candidateId: string, newResumeData: any) => {
-        try {
-            const candidate = candidates.find(c => c.id === candidateId);
-            if (!candidate || !(candidate as any).resume_id) {
-                console.error('[ATS Context] No resume found for candidate:', candidateId);
-                return;
-            }
-
-            console.log('[ATS Context] Enriching resume with new data (Full Replacement)');
-            // console.log('[ATS Context] New Data:', JSON.stringify(newResumeData, null, 2));
-
-            // Update resume with NEW enriched data (Replacement)
-            // The API now returns a complete resume object, so we just save it.
-            await db.updateResumeData((candidate as any).resume_id, newResumeData);
-
-            // Also update enriched flag
-            await db.updateResume((candidate as any).resume_id, { enriched: true });
-
-            await loadData();
-            console.log('[ATS Context] Resume enriched successfully');
-        } catch (error) {
-            console.error('[ATS Context] Error updating resume:', error);
+        const resume = resumes.find(r => r.candidate_id === candidateId);
+        if (!resume) {
+            console.error('[ATS Context] No resume found for candidate:', candidateId);
+            return;
         }
+        await updateResume(resume.id, newResumeData);
     };
 
     const updateCandidateLinkedIn = async (candidateId: string, linkedInUrl: string) => {
         try {
             console.log('[ATS Context] Updating LinkedIn URL for candidate:', candidateId, linkedInUrl);
 
-            const candidate = candidates.find(c => c.id === candidateId);
-            if (!candidate) {
-                console.error('[ATS Context] Candidate not found:', candidateId);
-                return;
-            }
+            // Optimistic update for LinkedIn URL
+            setResumes(prev => prev.map(r => {
+                if (r.candidate_id === candidateId) {
+                    const updatedParsed = { ...r.parsed_data, linkedin_url: linkedInUrl };
+                    // We also need to update the nested candidate object if it exists
+                    const updatedCandidate = r.candidate ? { ...r.candidate, linkedin_url: linkedInUrl } : r.candidate;
+                    return {
+                        ...r,
+                        parsed_data: updatedParsed,
+                        candidate: updatedCandidate
+                    };
+                }
+                return r;
+            }));
 
-            // Update candidate's linkedin_url in candidates table
+            // We also update the candidates list
+            setCandidates(prev => prev.map(c => {
+                if (c.id === candidateId) {
+                    return { ...c, linkedin_url: linkedInUrl };
+                }
+                return c;
+            }));
+
+            // DB Updates
             await db.updateCandidate(candidateId, { linkedin_url: linkedInUrl });
 
-            // If candidate has a resume, also update parsed_data.linkedin_url
-            if ((candidate as any).resume_id) {
-                const currentResume = await db.getResume((candidate as any).resume_id);
-                const updatedParsedData = {
-                    ...currentResume.parsed_data,
-                    linkedin_url: linkedInUrl
-                };
-                await db.updateResumeData((candidate as any).resume_id, updatedParsedData);
+            const resume = resumes.find(r => r.candidate_id === candidateId);
+            if (resume) {
+                const currentParsed = resume.parsed_data || {};
+                await db.updateResumeData(resume.id, { ...currentParsed, linkedin_url: linkedInUrl });
             }
 
-            await loadData();
+            // Background refresh
+            loadData();
             console.log('[ATS Context] LinkedIn URL updated successfully');
         } catch (error) {
             console.error('[ATS Context] Error updating LinkedIn URL:', error);
@@ -457,6 +504,7 @@ export function ATSProvider({ children }: { children: React.ReactNode }) {
         updateJobRounds,
         scoreCandidates,
         updateCandidateResume,
+        updateResume,
         updateCandidateLinkedIn
     };
 

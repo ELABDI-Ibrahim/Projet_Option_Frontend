@@ -371,7 +371,8 @@ export async function getApplications(jobOfferId?: string) {
       *,
       candidate:candidates(*),
       resume:resumes(*),
-      stage:pipeline_stages(*)
+      stage:pipeline_stages(*),
+      application_scores(*)
     `)
     .is('deleted_at', null);
 
@@ -388,7 +389,7 @@ export async function getApplications(jobOfferId?: string) {
 
   console.log('[DB] ✓ Fetched applications:', data.length);
 
-  return data as (Application & { candidate: Candidate; resume?: Resume; stage?: PipelineStage })[];
+  return data as (Application & { candidate: Candidate; resume?: Resume; stage?: PipelineStage; application_scores?: ApplicationScore[] })[];
 }
 
 export async function createApplication(application: Omit<Application, 'id' | 'applied_at' | 'updated_at' | 'deleted_at'>) {
@@ -482,4 +483,41 @@ export async function getApplicationScores(applicationId: string) {
 
   console.log('[DB] ✓ Fetched application scores:', data.length);
   return data as ApplicationScore[];
+}
+
+export async function autoShortlistCandidates(jobId: string, candidateLimit: number = 5) {
+  console.log('[DB] Auto-shortlisting candidates...');
+  console.log('[DB] Job ID:', jobId);
+  console.log('[DB] Limit:', candidateLimit);
+
+  const { data, error } = await supabase
+    .rpc('auto_shortlist_candidates', {
+      job_id: jobId,
+      candidate_limit: candidateLimit
+    });
+
+  if (error) {
+    console.error('[DB] ❌ Error auto-shortlisting candidates:', error);
+    throw error;
+  }
+
+  console.log('[DB] ✓ Auto-shortlisting successful:', data);
+  return data;
+}
+
+export async function autoScoreCandidates(jobId: string) {
+  console.log('[DB] Auto-scoring candidates for job:', jobId);
+
+  const { data, error } = await supabase
+    .rpc('auto_score_applicants', {
+      target_job_id: jobId
+    });
+
+  if (error) {
+    console.error('[DB] ❌ Error auto-scoring candidates:', error);
+    throw error;
+  }
+
+  console.log('[DB] ✓ Auto-scoring successful:', data);
+  return data;
 }

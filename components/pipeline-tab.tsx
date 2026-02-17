@@ -329,14 +329,6 @@ export function PipelineTab({ candidates, jobOffers, onUpdateStatus, onUpdateSta
           </div>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Debug Info */}
-      <div className="mt-8 p-4 bg-slate-100 rounded text-xs font-mono text-slate-500">
-        <p className="font-bold">Debug Info:</p>
-        <p>Selected Job ID: {selectedJobId}</p>
-        <p>Job Rounds: {rounds.map(r => `${r.name} (${r.id})`).join(', ')}</p>
-        <p>Candidates in View: {jobCandidates.length}</p>
-      </div>
     </div >
   );
 }

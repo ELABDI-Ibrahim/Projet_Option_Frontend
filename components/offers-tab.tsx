@@ -16,6 +16,9 @@ import { enrichCandidateFromResume, uploadResume } from '@/lib/api-service';
 import type { Candidate, JobOffer, Round } from '@/lib/types';
 import { useError } from '@/lib/error-context';
 import { useATS } from '@/lib/ats-context';
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { autoShortlistCandidates } from '@/lib/db-service';
 
 interface OffersTabProps {
   jobOffers: JobOffer[];
@@ -46,6 +49,8 @@ export function OffersTab({
   const [enrichLoadingId, setEnrichLoadingId] = useState<string | null>(null);
   const [showFeatureDialog, setShowFeatureDialog] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [candidateLimit, setCandidateLimit] = useState(5);
+  const [isSourcing, setIsSourcing] = useState(false);
 
   const { showError } = useError();
   const { refreshData } = useATS();
@@ -370,7 +375,7 @@ export function OffersTab({
                   className="gap-2 border-slate-300 hover:bg-slate-100"
                 >
                   <Search className="w-4 h-4" />
-                  CVthèque
+                  CVthèque / Auto-Source
                 </Button>
               </div>
 
@@ -392,7 +397,15 @@ export function OffersTab({
                           <TableCell className="font-semibold text-sm text-slate-900">{candidate.name}</TableCell>
                           <TableCell className="text-sm font-bold">
                             {candidate.score > 0 ? (
-                              <span className="inline-block px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-bold">{candidate.score}%</span>
+                              <Badge
+                                variant="outline"
+                                className={`px-2 py-1 text-xs font-bold border ${candidate.score >= 50
+                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  : 'bg-red-50 text-red-700 border-red-200'
+                                  }`}
+                              >
+                                {candidate.score}%
+                              </Badge>
                             ) : (
                               <span className="text-slate-400">-</span>
                             )}
@@ -470,16 +483,66 @@ export function OffersTab({
           onOpenChange={setResumeViewerOpen}
         />
 
-        {/* Feature Not Implemented Dialog */}
+        {/* Auto-Source / CVthèque Dialog */}
         <Dialog open={showFeatureDialog} onOpenChange={setShowFeatureDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>CVthèque Search</DialogTitle>
+              <DialogTitle>Auto-Source Candidates</DialogTitle>
               <DialogDescription>
-                This feature is not yet implemented. In a production system, this would allow you to search through a centralized resume database.
+                Automatically find and shortlist the best matching candidates from your resume database for this job offer.
               </DialogDescription>
             </DialogHeader>
-            <Button onClick={() => setShowFeatureDialog(false)}>Close</Button>
+
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="limit" className="text-right">
+                  Candidates
+                </Label>
+                <Input
+                  id="limit"
+                  type="number"
+                  value={candidateLimit}
+                  onChange={(e) => setCandidateLimit(Number(e.target.value))}
+                  className="col-span-3"
+                  min={1}
+                  max={20}
+                />
+              </div>
+              <p className="text-xs text-slate-500 ml-auto col-span-4">
+                We will match resumes based on skills and relevance.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowFeatureDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!selectedJobId) return;
+                  try {
+                    setIsSourcing(true);
+                    const result: any = await autoShortlistCandidates(selectedJobId, candidateLimit);
+
+                    setShowFeatureDialog(false);
+                    await refreshData();
+
+                    // Show success message (using generic alert for now or console)
+                    console.log("Auto-source result:", result);
+                    alert(result.message || "Candidates shortlisted successfully!");
+
+                  } catch (error) {
+                    console.error("Auto-source failed:", error);
+                    alert("Failed to auto-source candidates. Check console for details.");
+                  } finally {
+                    setIsSourcing(false);
+                  }
+                }}
+                disabled={isSourcing}
+              >
+                {isSourcing ? 'Sourcing...' : 'Find Candidates'}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

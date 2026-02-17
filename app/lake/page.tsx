@@ -14,7 +14,7 @@ import { findLinkedInProfile, enrichResume } from '@/lib/api-service';
 import { getStorageUrl } from '@/lib/utils';
 
 export default function LakePage() {
-    const { resumes, updateCandidateResume, updateCandidateLinkedIn, refreshData } = useATS();
+    const { resumes, updateResume, updateCandidateResume, updateCandidateLinkedIn, refreshData } = useATS();
     const { showError } = useError();
     const [viewerOpen, setViewerOpen] = useState(false);
     const [selectedResume, setSelectedResume] = useState<any>(null);
@@ -104,8 +104,8 @@ export default function LakePage() {
             console.log('[Lake] Enrichment successful, updating resume...');
 
             if (newResumeData) {
-                // Update candidate resume with new data
-                await updateCandidateResume(candidateId, newResumeData);
+                // Update resume with new data (using Resume ID directly)
+                await updateResume(resume.id, newResumeData);
                 // Also update LinkedIn URL if discovered/changed
                 if (newResumeData.linkedin_url && newResumeData.linkedin_url !== candidate.linkedin_url) {
                     await updateCandidateLinkedIn(candidateId, newResumeData.linkedin_url);
